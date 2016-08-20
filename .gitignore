@@ -1,0 +1,13 @@
+**~
+**.pyc
+**._*
+**.DS_Store
+**.nfs*
+build*
+.sconf_temp
+.sconsign.dblite
+dist
+*.egg-info
+db.sqlite3
+environ/
+examples/example_site/env
