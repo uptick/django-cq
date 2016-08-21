@@ -34,7 +34,7 @@ class Task(models.Model):
     details = JSONField(default={})
     parent = models.ForeignKey('self', blank=True, null=True,
                                related_name='subtasks')
-    previous = models.ManyToMany('self', related_name='next')
+    previous = models.ManyToManyField('self', related_name='next')
     submitted = models.DateTimeField(auto_now_add=True)
     started = models.DateTimeField(null=True, blank=True)
     updated = models.DateTimeField(auto_now=True)

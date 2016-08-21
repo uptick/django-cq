@@ -2,11 +2,14 @@ from unittest.mock import patch
 
 from django.test import TestCase
 from django.utils import timezone
-from channels.tests import TransactionChannelTestCase
+from channels.tests import TransactionChannelTestCase, ChannelTestCase
+from channels import Channel
+from channels.asgi import channel_layers
 
 from .models import Task
 from .decorators import task
 from .consumers import run_task
+from .backends import get_queued_tasks
 
 
 @task
@@ -165,3 +168,20 @@ class SerialSubtaskTestCase(TransactionChannelTestCase):
     def test_returns_subsubtask_result(self):
         result = task_e()
         self.assertEqual(result, 'a')
+
+
+class GetQueuedTasksTestCase(TestCase):
+    def test_returns_empty(self):
+        task_ids = get_queued_tasks()
+        self.assertEqual(task_ids, {})
+
+    def test_queued(self):
+        chan = Channel('cq-tasks')
+        chan.send({'task_id': 'one'})
+        chan.send({'task_id': 'two'})
+        task_ids = get_queued_tasks()
+        self.assertEqual(task_ids, {'one', 'two'})
+        cl = chan.channel_layer
+        while len(task_ids):
+            msg = cl.receive_many(['cq-tasks'], block=True)
+            task_ids.remove(msg[1]['task_id'])
