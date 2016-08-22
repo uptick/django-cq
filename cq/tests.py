@@ -2,14 +2,19 @@ from unittest.mock import patch
 
 from django.test import TestCase
 from django.utils import timezone
+from django.conf import settings
 from channels.tests import TransactionChannelTestCase, ChannelTestCase
 from channels import Channel
 from channels.asgi import channel_layers
+from redis import Redis
 
 from .models import Task
 from .decorators import task
 from .consumers import run_task
-from .backends import get_queued_tasks
+from .backends import (
+    get_queued_tasks, get_running_tasks, set_current_task,
+    worker_publish_current
+)
 
 
 @task
@@ -91,7 +96,7 @@ class TaskFailureTestCase(TransactionChannelTestCase):
         run_task(self.get_next_message('cq-tasks', require=True))
         task.wait()
         self.assertEqual(task.status, task.STATUS_FAILURE)
-        self.assertIsNot(task.result.get('error', None), None)
+        self.assertIsNot(task.error, None)
 
 
 class DBLatencyTestCase(TestCase):
@@ -141,7 +146,7 @@ class AsyncSubtaskTestCase(TransactionChannelTestCase):
         run_task(self.get_next_message('cq-tasks', require=True))
         run_task(self.get_next_message('cq-tasks', require=True))
         task.wait()
-        self.assertEqual(task.status, task.STATUS_FAILURE)
+        self.assertEqual(task.status, task.STATUS_INCOMPLETE)
         self.assertEqual(task.result, None)
         self.assertIsNot(task.error, None)
 
@@ -151,7 +156,7 @@ class AsyncSubtaskTestCase(TransactionChannelTestCase):
         run_task(self.get_next_message('cq-tasks', require=True))
         run_task(self.get_next_message('cq-tasks', require=True))
         task.wait()
-        self.assertEqual(task.status, task.STATUS_FAILURE)
+        self.assertEqual(task.status, task.STATUS_INCOMPLETE)
         self.assertEqual(task.result, None)
         self.assertIsNot(task.error, None)
 
@@ -185,3 +190,30 @@ class GetQueuedTasksTestCase(TestCase):
         while len(task_ids):
             msg = cl.receive_many(['cq-tasks'], block=True)
             task_ids.remove(msg[1]['task_id'])
+
+
+class GetRunningTasksTestCase(TestCase):
+    def test_empty_list(self):
+        task_ids = get_running_tasks()
+        self.assertEqual(task_ids, set())
+
+    def test_running(self):
+        conn = Redis.from_url(settings.REDIS_URL)
+        conn.lpush('cq-current', 'one')
+        conn.lpush('cq-current', 'two')
+        task_ids = get_running_tasks()
+        self.assertEqual(task_ids, {'one', 'two'})
+        task_ids = get_running_tasks()
+        self.assertEqual(task_ids, set())
+
+
+class PublishCurrentTestCase(TestCase):
+    def test_publish(self):
+        set_current_task('hello')
+        worker_publish_current(max_its=2, sleep_time=0.1)
+        set_current_task('world')
+        worker_publish_current(max_its=3, sleep_time=0.1)
+        task_ids = get_running_tasks()
+        self.assertEqual(task_ids, {'hello', 'world'})
+        task_ids = get_running_tasks()
+        self.assertEqual(task_ids, set())

@@ -1,6 +1,7 @@
 import time
 from datetime import timedelta
 import uuid
+import logging
 
 from django.db import models, transaction
 from django.contrib.postgres.fields import JSONField
@@ -11,13 +12,17 @@ from .signature import from_signature
 from .utils import rlock
 
 
+logger = logging.getLogger('cq')
+
+
 class Task(models.Model):
     STATUS_PENDING = 'P'
     STATUS_QUEUED = 'Q'
     STATUS_RUNNING = 'R'
-    STATUS_WAITING = 'W'
     STATUS_FAILURE = 'F'
     STATUS_SUCCESS = 'S'
+    STATUS_WAITING = 'W'
+    STATUS_INCOMPLETE = 'I'
     STATUS_LOST = 'L'
     STATUS_CHOICES = (
         (STATUS_PENDING, 'Pending'),
@@ -25,7 +30,15 @@ class Task(models.Model):
         (STATUS_FAILURE, 'Failure'),
         (STATUS_SUCCESS, 'Success')
     )
-    STATUS_DONE = {STATUS_FAILURE, STATUS_SUCCESS, STATUS_LOST}
+    STATUS_DONE = {STATUS_FAILURE, STATUS_SUCCESS, STATUS_INCOMPLETE,
+                   STATUS_LOST}
+
+    AT_RISK_QUEUED = 'Q'
+    AT_RISK_RUNNING = 'R'
+    AT_RISK_CHOICES = (
+        (AT_RISK_QUEUED, 'Queued'),
+        (AT_RISK_RUNNING, 'Running'),
+    )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     status = models.CharField(max_length=1, choices=STATUS_CHOICES,
@@ -34,7 +47,9 @@ class Task(models.Model):
     details = JSONField(default={})
     parent = models.ForeignKey('self', blank=True, null=True,
                                related_name='subtasks')
-    previous = models.ManyToManyField('self', related_name='next')
+    previous = models.ManyToManyField('self', related_name='next',
+                                      symmetrical=False)
+    waiting_on = models.ForeignKey('self', blank=True, null=True)
     submitted = models.DateTimeField(auto_now_add=True)
     started = models.DateTimeField(null=True, blank=True)
     updated = models.DateTimeField(auto_now=True)
@@ -70,6 +85,7 @@ class Task(models.Model):
         start = timezone.now()
         end = start + timedelta(milliseconds=timeout)
         delta = timedelta(milliseconds=500)
+        self.refresh_from_db()
         while self.status not in self.STATUS_DONE and start < end:
             time.sleep(0.5)
             self.refresh_from_db()
@@ -105,32 +121,66 @@ class Task(models.Model):
         from .task import chain
         return chain(func, args, kwargs, previous=self)
 
-    def waiting(self):
+    def waiting(self, task=None, result=None):
+        logger.info('Waiting task: {}'.format(self.signature['func_name']))
         self.status = self.STATUS_WAITING
-        self.save(update_fields=('status',))
+        self.waiting_on = task
+        if result is not None:
+            logger.info('Setting task result: {} = {}'.format(
+                self.signature['func_name'], result
+            ))
+            self.details = {
+                'result': result
+            }
+        self.save(update_fields=('status', 'waiting_on', 'details'))
 
-    def success(self, result):
+    def success(self, result=None):
         """To be run from workers.
         """
+        logger.info('Task succeeded: {}'.format(self.signature['func_name']))
         self.status = self.STATUS_SUCCESS
-        self.details = {
-            'result': result
-        }
-        self.save(update_fields=('status', 'details'))
-        if self.parent and 'result' not in self.parent.details:
-            self.parent.success(result)
+        if result is not None:
+            logger.info('Setting task result: {} = {}'.format(
+                self.signature['func_name'], result
+            ))
+            self.details = {
+                'result': result
+            }
+        with transaction.atomic():
+            self.save(update_fields=('status', 'details'))
+            transaction.on_commit(lambda: self.post_success(result))
+
+    def post_success(self, result):
+        if self.parent:
+            self.parent.child_succeeded(self, result)
         for next in self.next.all():
             next.start(result)
+
+    def child_succeeded(self, task, result):
+        logger.info('Task child succeeded: {}'.format(self.signature['func_name']))
+        if task == self.waiting_on and self.status not in (self.STATUS_FAILURE, self.STATUS_LOST):
+            self.details = {
+                'result': result
+            }
+            self.save(update_fields=('details',))
+        if all([s.status == self.STATUS_SUCCESS for s in self.subtasks.all()]):
+            logger.info('All children succeeded: {}'.format(self.signature['func_name']))
+            self.success()
 
     def failure(self, err):
         """To be run from workers.
         """
-        self.status = self.STATUS_FAILURE
+        if self.status == self.STATUS_WAITING:
+            logger.info('Task incomplete: {}'.format(self.signature['func_name']))
+            self.status = self.STATUS_INCOMPLETE
+        else:
+            logger.info('Task failed: {}'.format(self.signature['func_name']))
+            self.status = self.STATUS_FAILURE
         self.details = {
             'error': str(err)
         }
         self.save(update_fields=('status', 'details'))
-        if self.parent and 'result' not in self.parent.details:
+        if self.parent:
             self.parent.failure(err)
 
     @property

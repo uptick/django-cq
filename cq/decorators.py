@@ -26,7 +26,7 @@ class _task(object):
         task = kwargs.pop('task', None)
         if task is None:
             task = SerialTask()
-        return func(*args, task=task, **kwargs)
+        return func(task, *args, **kwargs)
 
 
 def task(func):

@@ -9,7 +9,10 @@ class SerialTask(object):
 
 def chain(func, args, kwargs, parent=None, previous=None):
     sig = to_signature(func, args, kwargs)
-    task = Task.objects.create(signature=sig, parent=parent, previous=previous)
+    task = Task.objects.create(signature=sig, parent=parent)
+    if previous:
+        task.previous = previous
+        task.save(update_fields=('previous',))
     return task
 
 
