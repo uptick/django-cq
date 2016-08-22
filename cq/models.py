@@ -215,6 +215,23 @@ class Task(models.Model):
         if self.parent:
             self.parent.failure(err)
 
+    def log(self, msg, origin=None):
+        """Log to the task, and to the system logger.
+
+        Will push the logged message to the topmost task.
+        """
+        if self.parent:
+            self.parent.log(msg, origin or self)
+        else:
+            logger.log(msg)
+            data = {
+                'message': msg,
+                'timestamp': timezone.now(),
+            }
+            if origin:
+                data['origin'] = origin.id
+            self.details.setdefault('logs', []).append(data)
+
     @property
     def result(self):
         return self.details.get('result', None)
