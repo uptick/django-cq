@@ -27,5 +27,6 @@ setup(
     install_requires=[
         'setuptools',
         'six',
+        'croniter'
     ],
 )

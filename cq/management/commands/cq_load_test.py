@@ -8,11 +8,32 @@ from cq.models import Task
 
 
 @task
+def task_j(task, a, b):
+    return a + b
+
+
+@task
+def task_i(task):
+    return 3
+
+
+@task
+def task_f(task):
+    return task_i.delay().chain(task_j, (2,))
+
+
+@task
 def task_c(task, value):
     if value == 'd':
-        Task.objects.get_or_create(details={'failed': 'failed'})
+        try:
+            Task.objects.get_or_create(details={'failed': 'failed'})
+        except Task.MultipleObjectsReturned:
+            pass
         raise Exception('Task D, should fail.')
-    Task.objects.get_or_create(details={'failed': 'okay'})
+    try:
+        Task.objects.get_or_create(details={'failed': 'okay'})
+    except Task.MultipleObjectsReturned:
+        pass
     return value
 
 
@@ -20,15 +41,14 @@ def task_c(task, value):
 def task_a(task):
     task.subtask(task_c, ('c',))
     task.subtask(task_c, ('d',))
-    return task.subtask(task_c, ('e',))
+    return task_c.delay('e')
 
 
 @task
 def task_b(task):
-    ret = task.subtask(task_c, ('f',))
     task.subtask(task_c, ('g',))
     task.subtask(task_c, ('h',))
-    return ret
+    return task_f.delay()
 
 
 @task
@@ -85,8 +105,8 @@ class Command(BaseCommand):
     def check_b(self, trunk, task):
         task.wait()
         self.assertEqual(task.status, Task.STATUS_SUCCESS, 'task_b should have succeeded.')
-        assert task.result == 'f', 'task_f result should be "f"'
-        self.check_f(task.subtasks.get(details__result='f'))
+        self.assertEqual(task.result, 5, 'task_b result should be 5')
+        self.check_f(task.subtasks.get(details__result=5))
         self.check_g(task.subtasks.get(details__result='g'))
         self.check_h(task.subtasks.get(details__result='h'))
 
@@ -105,7 +125,7 @@ class Command(BaseCommand):
 
     def check_f(self, task):
         task.wait()
-        assert task.result == 'f', 'task_f result should be "f"'
+        self.assertEqual(task.result, 5, 'task_f result should be 5')
 
     def check_g(self, task):
         task.wait()

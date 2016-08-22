@@ -1,14 +1,15 @@
 import random
-# from datetime import datetime
 import time
-import json
+from datetime import timedelta
 import logging
+import threading
 
 from channels import Channel
-from redis import Redis
-from django.conf import settings
+from django_redis import get_redis_connection
+from django.utils import timezone
 
-from .models import Task
+from .models import Task, RepeatingTask
+from .utils import rlock
 
 
 logger = logging.getLogger('cq')
@@ -50,7 +51,7 @@ def get_queued_tasks():
 
 
 def get_running_tasks():
-    conn = Redis.from_url(settings.REDIS_URL)
+    conn = get_redis_connection()
     pipe = conn.pipeline()
     pipe.lrange('cq-current', 0, -1)
     pipe.delete('cq-current')
@@ -87,23 +88,35 @@ def worker_publish_current(*args, **kwargs):
     sleep_time = kwargs.pop('sleep_time', 5)
     cur_it = 0
     while 1:
-        try:
-            conn = Redis.from_url(settings.REDIS_URL)
-        except Exception as err:
-            logger.error(str(err))
-            time.sleep(0.5)
+        if max_its is not None:
+            if cur_it >= max_its:
+                return
+        task_id = current_task
+        if task_id is None:
             continue
-        # try:
-        while 1:
-            if max_its is not None:
-                if cur_it >= max_its:
-                    return
-            time.sleep(sleep_time)
-            task_id = current_task
-            if task_id is None:
-                continue
-            conn.lpush('cq-current', task_id)
-            if max_its is not None:
-                cur_it += 1
-        # except:
-        #     pass
+        conn = get_redis_connection()
+        conn.lpush('cq-current', task_id)
+        if max_its is not None:
+            cur_it += 1
+        time.sleep(sleep_time)
+
+
+def perform_scheduling():
+    with rlock('cq:scheduler:lock'):
+        logger.info('Checking for scheduled tasks.')
+        now = timezone.now()
+        rtasks = RepeatingTask.objects.filter(next_run__lte=now)
+        for rt in rtasks:
+            rt.submit()
+
+
+def scheduler(*args, **kwargs):
+    while 1:
+        conn = get_redis_connection()
+        if conn.setnx('cq:scheduler', 'dummy'):
+            conn.expire('cq:scheduler', 30)
+            perform_scheduling()
+        now = timezone.now()
+        delay = ((now + timedelta(minutes=1)).replace(second=0, microsecond=0) - now).total_seconds()
+        logger.debug('Waiting {} seconds for next schedule attempt.'.format(delay))
+        time.sleep(delay)

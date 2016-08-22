@@ -1,4 +1,6 @@
 from unittest.mock import patch
+from unittest import skip
+from datetime import datetime
 
 from django.test import TestCase
 from django.utils import timezone
@@ -7,8 +9,9 @@ from channels.tests import TransactionChannelTestCase, ChannelTestCase
 from channels import Channel
 from channels.asgi import channel_layers
 from redis import Redis
+from croniter import croniter
 
-from .models import Task
+from .models import Task, RepeatingTask
 from .decorators import task
 from .consumers import run_task
 from .backends import (
@@ -56,6 +59,21 @@ def task_f(task):
 def task_g(task):
     sub = task.subtask(task_f)
     return sub
+
+
+@task
+def task_h(task):
+    return task_i.delay().chain(task_j, (2,))
+
+
+@task
+def task_i(task):
+    return 3
+
+
+@task
+def task_j(task, a, b):
+    return a + b
 
 
 class DecoratorTestCase(TransactionChannelTestCase):
@@ -175,11 +193,23 @@ class SerialSubtaskTestCase(TransactionChannelTestCase):
         self.assertEqual(result, 'a')
 
 
+class AsyncChainedTaskTestCase(TransactionChannelTestCase):
+    def test_all(self):
+        task = task_h.delay()
+        run_task(self.get_next_message('cq-tasks', require=True))
+        run_task(self.get_next_message('cq-tasks', require=True))
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_SUCCESS)
+        self.assertEqual(task.result, 5)
+
+
 class GetQueuedTasksTestCase(TestCase):
     def test_returns_empty(self):
         task_ids = get_queued_tasks()
         self.assertEqual(task_ids, {})
 
+    @skip('Need worker disabled.')
     def test_queued(self):
         chan = Channel('cq-tasks')
         chan.send({'task_id': 'one'})
@@ -217,3 +247,20 @@ class PublishCurrentTestCase(TestCase):
         self.assertEqual(task_ids, {'hello', 'world'})
         task_ids = get_running_tasks()
         self.assertEqual(task_ids, set())
+
+
+class CreateRepeatingTaskTestCase(TestCase):
+    def test_create(self):
+        rt = RepeatingTask.objects.create(func_name='cq.tests.task_a')
+        self.assertEqual(rt.next_run, croniter(rt.crontab).get_next(datetime))
+
+
+class RunRepeatingTaskTestCase(TransactionChannelTestCase):
+    def test_run(self):
+        rt = RepeatingTask.objects.create(func_name='cq.tests.task_a')
+        task = rt.submit()
+        self.assertLess(rt.last_run, timezone.now())
+        self.assertGreater(rt.next_run, timezone.now())
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.wait()
+        self.assertEqual(task.result, 'a')
