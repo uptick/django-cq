@@ -42,8 +42,10 @@ channel_routing = [
 
 ```python
 @task
-def send_emails(task):
+def send_email(task, addr):
     ...
+
+task = send_emails.delay('dummy@dummy.org')
 ```
 
 ```python
@@ -53,6 +55,8 @@ def send_emails(task):
     for addr in email_addresses:
         task.subtask(send_email, addr)
     ...
+
+send_emails.delay()
 ```
 
 ```python
