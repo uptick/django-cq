@@ -22,7 +22,7 @@ logger = logging.getLogger('cq')
 
 class Task(models.Model):
     STATUS_PENDING = 'P'
-    STATUS_RETRY = 'R'
+    STATUS_RETRY = 'Y'
     STATUS_QUEUED = 'Q'
     STATUS_RUNNING = 'R'
     STATUS_FAILURE = 'F'
@@ -45,9 +45,11 @@ class Task(models.Model):
                    STATUS_LOST}
     STATUS_ERROR = {STATUS_FAILURE, STATUS_LOST, STATUS_INCOMPLETE}
 
+    AT_RISK_NONE = 'N'
     AT_RISK_QUEUED = 'Q'
     AT_RISK_RUNNING = 'R'
     AT_RISK_CHOICES = (
+        (AT_RISK_NONE, 'None'),
         (AT_RISK_QUEUED, 'Queued'),
         (AT_RISK_RUNNING, 'Running'),
     )
@@ -55,8 +57,8 @@ class Task(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     status = models.CharField(max_length=1, choices=STATUS_CHOICES,
                               default=STATUS_PENDING, db_index=True)
-    signature = JSONField(default={})
-    details = JSONField(default={})
+    signature = JSONField(default={}, blank=True)
+    details = JSONField(default={}, blank=True)
     parent = models.ForeignKey('self', blank=True, null=True,
                                related_name='subtasks')
     previous = models.ForeignKey('self', related_name='next', blank=True,
@@ -65,12 +67,22 @@ class Task(models.Model):
     submitted = models.DateTimeField(auto_now_add=True)
     started = models.DateTimeField(null=True, blank=True)
     updated = models.DateTimeField(auto_now=True)
+    at_risk = models.CharField(max_length=1, choices=AT_RISK_CHOICES,
+                               default=AT_RISK_NONE)
 
     class Meta:
         ordering = ('-submitted',)
 
     def __str__(self):
-        return '{} ({})'.format(self.signature, self.submitted)
+        return '{} - {}'.format(self.id, self.func_name)
+
+    def retry(self):
+        self.status = self.STATUS_PENDING
+        self.started = None
+        self.updated = None
+        self.details = {}
+        self.at_risk = self.AT_RISK_NONE
+        self.submit()
 
     def submit(self, *pre_args):
         """To be run from server.
@@ -121,8 +133,7 @@ class Task(models.Model):
         """
         self.status = self.STATUS_RUNNING
         self.started = timezone.now()
-        self.details = {}
-        self.save(update_fields=('status', 'started', 'details'))
+        self.save(update_fields=('status', 'started'))
         func, args, kwargs = from_signature(self.signature)
         if result is not None:
             args = (result,) + tuple(args)
@@ -158,9 +169,7 @@ class Task(models.Model):
             logger.info('Setting task result: {} = {}'.format(
                 self.func_name, result
             ))
-            self.details = {
-                'result': result
-            }
+            self.details['result'] = result
         self.save(update_fields=('status', 'waiting_on', 'details'))
 
     def success(self, result=None):
@@ -172,9 +181,7 @@ class Task(models.Model):
             logger.info('Setting task result: {} = {}'.format(
                 self.func_name, result
             ))
-            self.details = {
-                'result': result
-            }
+            self.details['result'] = result
         with transaction.atomic():
             self.save(update_fields=('status', 'details'))
             transaction.on_commit(lambda: self.post_success(self.result))
@@ -191,9 +198,7 @@ class Task(models.Model):
             logger.info('Setting task result: {} = {}'.format(
                 self.func_name, result
             ))
-            self.details = {
-                'result': result
-            }
+            self.details['result'] = result
             self.save(update_fields=('details',))
         if all([s.status == self.STATUS_SUCCESS for s in self.subtasks.all()]):
             logger.info('All children succeeded: {}'.format(self.func_name))
@@ -208,9 +213,7 @@ class Task(models.Model):
         else:
             logger.info('Task failed: {}'.format(self.func_name))
             self.status = self.STATUS_FAILURE
-        self.details = {
-            'error': str(err)
-        }
+        self.details['error'] = str(err)
         self.save(update_fields=('status', 'details'))
         if self.parent:
             self.parent.failure(err)
@@ -223,10 +226,10 @@ class Task(models.Model):
         if self.parent:
             self.parent.log(msg, origin or self)
         else:
-            logger.log(msg)
+            logger.info(msg)
             data = {
                 'message': msg,
-                'timestamp': timezone.now(),
+                'timestamp': str(timezone.now())
             }
             if origin:
                 data['origin'] = origin.id
@@ -241,8 +244,15 @@ class Task(models.Model):
         return self.details.get('error', None)
 
     @property
+    def logs(self):
+        return self.details.get('logs', [])
+
+    @property
     def func_name(self):
         return self.signature.get('func_name', None)
+
+    def format_logs(self):
+        return '\n'.join([l.message for l in self.logs])
 
 
 def validate_cron(value):
@@ -274,7 +284,8 @@ def schedule_task(cls, crontab, func, args=(), kwargs={}):
         crontab=crontab,
         func_name=to_func_name(func),
         args=args,
-        kwargs=kwargs
+        kwargs=kwargs,
+        next_run=croniter(crontab, timezone.now()).get_next(datetime)
     )
 
 

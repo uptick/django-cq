@@ -60,29 +60,6 @@ def get_running_tasks():
     return set([x.decode() for x in results[0]])
 
 
-def worker_check_lost():
-    running_task_ids = get_running_tasks()
-    queued_task_ids = get_queued_tasks()
-    queued_tasks = Task.objects.filter(status=Task.STATUS_QUEUED)
-    running_tasks = Task.objects.filter(status=Task.STATUS_RUNNING)
-    for task in queued_tasks:
-        if task.id not in queued_task_ids:
-            if task.at_risk == Task.AT_RISK_QUEUED:
-                task.status = Task.STATUS_LOST
-                task.save(update_fields=['status'])
-            else:
-                task.at_risk = Task.AT_RISK_QUEUED
-                task.save(update_fields=['at_risk'])
-    for task in running_tasks:
-        if task.id not in running_task_ids:
-            if task.at_risk == Task.AT_RISK_RUNNING:
-                task.status = Task.STATUS_LOST
-                task.save(update_fields=['status'])
-            else:
-                task.at_risk = Task.AT_RISK_RUNNING
-                task.save(update_fields=['at_risk'])
-
-
 def worker_publish_current(*args, **kwargs):
     global current_task
     max_its = kwargs.pop('max_its', None)
