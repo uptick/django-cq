@@ -3,7 +3,7 @@ from cq.tasks import clean_up
 
 
 def add_clean_up(apps, scema_editor):
-    RepeatingTask = apps.get_model('RepeatingTask')
+    RepeatingTask = apps.get_model('cq.RepeatingTask')
     RepeatingTask.schedule(
         '0 0 * * *',
         clean_up
