@@ -4,18 +4,23 @@ import inspect
 from .utils import import_attribute
 
 
-def to_signature(func, args, kwargs):
-    sig = {}
+def to_func_name(func):
     if inspect.isfunction(func) or inspect.isbuiltin(func):
-        sig['func_name'] = '{0}.{1}'.format(func.__module__, func.__name__)
+        name = '{0}.{1}'.format(func.__module__, func.__name__)
     elif isinstance(func, six.string_types):
-        sig['func_name'] = str(func)
+        name = str(func)
     else:
         msg = 'Expected a callable or a string, but got: {}'.format(func)
         raise TypeError(msg)
-    sig['args'] = args
-    sig['kwargs'] = kwargs
-    return sig
+    return name
+
+
+def to_signature(func, args, kwargs):
+    return {
+        'func_name': to_func_name(func),
+        'args': args,
+        'kwargs': kwargs
+    }
 
 
 def from_signature(sig):

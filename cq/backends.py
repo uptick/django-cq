@@ -7,6 +7,7 @@ import threading
 from channels import Channel
 from django_redis import get_redis_connection
 from django.utils import timezone
+from django.db.utils import ProgrammingError
 
 from .models import Task, RepeatingTask
 from .utils import rlock
@@ -103,11 +104,14 @@ def worker_publish_current(*args, **kwargs):
 
 def perform_scheduling():
     with rlock('cq:scheduler:lock'):
-        logger.info('Checking for scheduled tasks.')
+        logger.debug('Checking for scheduled tasks.')
         now = timezone.now()
-        rtasks = RepeatingTask.objects.filter(next_run__lte=now)
-        for rt in rtasks:
-            rt.submit()
+        try:
+            rtasks = RepeatingTask.objects.filter(next_run__lte=now)
+            for rt in rtasks:
+                rt.submit()
+        except ProgrammingError:
+            logger.warning('CQ scheduler not running, DB is out of date.')
 
 
 def scheduler(*args, **kwargs):

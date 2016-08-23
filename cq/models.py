@@ -13,7 +13,7 @@ from channels import Channel
 from asgi_redis import RedisChannelLayer
 from croniter import croniter
 
-from .signature import from_signature, to_signature
+from .signature import from_signature, to_signature, to_func_name
 from .utils import rlock, import_attribute
 
 
@@ -280,9 +280,15 @@ class RepeatingTask(models.Model):
     next_run = models.DateTimeField(blank=True, null=True, db_index=True)
     coalesce = models.BooleanField(default=True)
 
+    def __str__(self):
+        if self.last_run:
+            return '{} ({})'.format(self.func_name, self.last_run)
+        else:
+            return self.func_name
+
     def submit(self):
         from .task import delay
-        logger.debug('Launching scheduled task: {}'.format(self.func_name))
+        logger.info('Launching scheduled task: {}'.format(self.func_name))
         task = delay(self.func_name, tuple(self.args), self.kwargs)
         self.last_run = timezone.now()
         self.update_next_run()
@@ -291,3 +297,12 @@ class RepeatingTask(models.Model):
 
     def update_next_run(self):
         self.next_run = croniter(self.crontab, timezone.now()).get_next(datetime)
+
+    @classmethod
+    def schedule(cls, crontab, func, args=(), kwargs={}):
+        return RepeatingTask.objects.create(
+            crontab=crontab,
+            func_name=to_func_name(func),
+            args=args,
+            kwargs=kwargs
+        )
