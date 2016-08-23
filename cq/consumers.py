@@ -17,8 +17,7 @@ def run_task(message):
     set_current_task(task_id)
     with transaction.atomic():
         try:
-            with transaction.atomic():
-                result = task.start()
+            result = task.start()
         except Exception as err:
             task.failure(err)
         else:

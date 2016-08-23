@@ -28,6 +28,7 @@ class Migration(migrations.Migration):
                 ('last_run', models.DateTimeField(blank=True, null=True)),
                 ('next_run', models.DateTimeField(blank=True, db_index=True, null=True)),
                 ('coalesce', models.BooleanField(default=True)),
+                ('result_ttl', models.PositiveIntegerField(blank=True, default=1800)),
             ],
         ),
         migrations.CreateModel(
@@ -39,11 +40,13 @@ class Migration(migrations.Migration):
                 ('details', django.contrib.postgres.fields.jsonb.JSONField(blank=True, default={})),
                 ('submitted', models.DateTimeField(auto_now_add=True)),
                 ('started', models.DateTimeField(blank=True, null=True)),
-                ('updated', models.DateTimeField(auto_now=True)),
                 ('parent', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='subtasks', to='cq.Task')),
                 ('previous', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='next', to='cq.Task')),
                 ('waiting_on', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, to='cq.Task')),
                 ('at_risk', models.CharField(choices=[('N', 'None'), ('Q', 'Queued'), ('R', 'Running')], default='N', max_length=1)),
+                ('finished', models.DateTimeField(blank=True, null=True)),
+                ('result_expiry', models.DateTimeField(blank=True, null=True)),
+                ('result_ttl', models.PositiveIntegerField(blank=True, default=1800)),
             ],
             options={
                 'ordering': ('-submitted',),

@@ -36,7 +36,7 @@ class SerialTask(object):
         logger.info(msg)
 
 
-def chain(func, args, kwargs, parent=None, previous=None):
+def chain(func, args, kwargs, parent=None, previous=None, **_kwargs):
     """Run a task after an existing task.
 
     The result is passed as the first argument to the chained task.
@@ -47,11 +47,12 @@ def chain(func, args, kwargs, parent=None, previous=None):
     sig = to_signature(func, args, kwargs)
     if parent is None and previous:
         parent = previous.parent
-    task = Task.objects.create(signature=sig, parent=parent, previous=previous)
+    task = Task.objects.create(signature=sig, parent=parent, previous=previous,
+                               **_kwargs)
     return task
 
 
-def delay(func, args, kwargs, parent=None):
-    task = chain(func, args, kwargs, parent)
+def delay(func, args, kwargs, parent=None, **_kwargs):
+    task = chain(func, args, kwargs, parent, **_kwargs)
     task.submit()
     return task

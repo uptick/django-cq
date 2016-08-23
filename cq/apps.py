@@ -9,7 +9,7 @@ from channels.signals import worker_ready
 logger = logging.getLogger('cq')
 
 
-def launch_scheduler():
+def launch_scheduler(*args, **kwargs):
     from .backends import scheduler
     logger.info('Launching CQ scheduler.')
     thread = Thread(name='scheduler', target=scheduler)
@@ -30,5 +30,5 @@ class CqConfig(AppConfig):
     def ready(self):
         import cq.signals
         if getattr(settings, 'CQ_SCHEDULER', True):
-            launch_scheduler()
+            worker_ready.connect(launch_scheduler)
         worker_ready.connect(launch_checkin)

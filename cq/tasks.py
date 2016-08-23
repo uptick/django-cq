@@ -15,13 +15,14 @@ def clean_up(task):
     Removes tasks that succeeded that are a week or older. Also
     removes any task older than a month. Runs once per day at midnight.
     """
+    now = timezone.now()
     to_del = Task.objects.filter(
-        Q(status=Task.STATUS_SUCCESS,
-          updated__lt=timezone.now() - timedelta(weeks=1)) |
-        Q(updated__lt=timezone.now() - timedelta(months=1))
+        status=Task.STATUS_SUCCESS,
+        result_expiry__lte=now
     )
-    task.log('Cleaned up: {}'.format(', '.join([o.id for o in to_del])))
-    to_del.delete()
+    if len(to_del):
+        task.log('Cleaned up: {}'.format(', '.join([str(o.id) for o in to_del])))
+        to_del.delete()
 
 
 @task

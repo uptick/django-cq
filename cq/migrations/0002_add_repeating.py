@@ -7,18 +7,21 @@ def add_repeating(apps, scema_editor):
     RepeatingTask = apps.get_model('cq.RepeatingTask')
     schedule_task(
         RepeatingTask,
-        '0 0 * * *',
-        clean_up
+        '* * * * *',
+        clean_up,
+        result_ttl=30
     )
     schedule_task(
         RepeatingTask,
         '* * * * *',
-        retry_tasks
+        retry_tasks,
+        result_ttl=30
     )
     schedule_task(
         RepeatingTask,
         '* * * * *',
-        check_lost
+        check_lost,
+        result_ttl=30
     )
 
 

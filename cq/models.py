@@ -66,7 +66,9 @@ class Task(models.Model):
     waiting_on = models.ForeignKey('self', blank=True, null=True)
     submitted = models.DateTimeField(auto_now_add=True)
     started = models.DateTimeField(null=True, blank=True)
-    updated = models.DateTimeField(auto_now=True)
+    finished = models.DateTimeField(null=True, blank=True)
+    result_ttl = models.PositiveIntegerField(default=1800, blank=True)
+    result_expiry = models.DateTimeField(null=True, blank=True)
     at_risk = models.CharField(max_length=1, choices=AT_RISK_CHOICES,
                                default=AT_RISK_NONE)
 
@@ -79,7 +81,7 @@ class Task(models.Model):
     def retry(self):
         self.status = self.STATUS_PENDING
         self.started = None
-        self.updated = None
+        self.finished = None
         self.details = {}
         self.at_risk = self.AT_RISK_NONE
         self.submit()
@@ -137,7 +139,8 @@ class Task(models.Model):
         func, args, kwargs = from_signature(self.signature)
         if result is not None:
             args = (result,) + tuple(args)
-        return func(*args, task=self, **kwargs)
+        with transaction.atomic():
+            return func(*args, task=self, **kwargs)
 
     def subtask(self, func, args=(), kwargs={}):
         """Launch a subtask.
@@ -182,8 +185,10 @@ class Task(models.Model):
                 self.func_name, result
             ))
             self.details['result'] = result
+        self.finished = timezone.now()
+        self.result_expiry = self.finished + timedelta(seconds=self.result_ttl)
         with transaction.atomic():
-            self.save(update_fields=('status', 'details'))
+            self.save(update_fields=('status', 'details', 'finished', 'result_expiry'))
             transaction.on_commit(lambda: self.post_success(self.result))
 
     def post_success(self, result):
@@ -214,7 +219,8 @@ class Task(models.Model):
             logger.info('Task failed: {}'.format(self.func_name))
             self.status = self.STATUS_FAILURE
         self.details['error'] = str(err)
-        self.save(update_fields=('status', 'details'))
+        self.finished = timezone.now()
+        self.save(update_fields=('status', 'details', 'finished'))
         if self.parent:
             self.parent.failure(err)
 
@@ -279,13 +285,14 @@ def validate_func_name(value):
         raise ValidationError('Unable to import task.')
 
 
-def schedule_task(cls, crontab, func, args=(), kwargs={}):
+def schedule_task(cls, crontab, func, args=(), kwargs={}, **_kwargs):
     return cls.objects.create(
         crontab=crontab,
         func_name=to_func_name(func),
         args=args,
         kwargs=kwargs,
-        next_run=croniter(crontab, timezone.now()).get_next(datetime)
+        next_run=croniter(crontab, timezone.now()).get_next(datetime),
+        **_kwargs
     )
 
 
@@ -296,6 +303,7 @@ class RepeatingTask(models.Model):
     func_name = models.CharField(max_length=256, validators=[validate_func_name])
     args = JSONField(default=[], blank=True)
     kwargs = JSONField(default={}, blank=True)
+    result_ttl = models.PositiveIntegerField(default=1800, blank=True)
     last_run = models.DateTimeField(blank=True, null=True)
     next_run = models.DateTimeField(blank=True, null=True, db_index=True)
     coalesce = models.BooleanField(default=True)
@@ -309,7 +317,8 @@ class RepeatingTask(models.Model):
     def submit(self):
         from .task import delay
         logger.info('Launching scheduled task: {}'.format(self.func_name))
-        task = delay(self.func_name, tuple(self.args), self.kwargs)
+        task = delay(self.func_name, tuple(self.args), self.kwargs,
+                     result_ttl=self.result_ttl)
         self.last_run = timezone.now()
         self.update_next_run()
         self.save(update_fields=('last_run', 'next_run'))
