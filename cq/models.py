@@ -269,6 +269,15 @@ def validate_func_name(value):
         raise ValidationError('Unable to import task.')
 
 
+def schedule_task(cls, crontab, func, args=(), kwargs={}):
+    return cls.objects.create(
+        crontab=crontab,
+        func_name=to_func_name(func),
+        args=args,
+        kwargs=kwargs
+    )
+
+
 class RepeatingTask(models.Model):
     crontab = models.CharField(max_length=100, default='* * * * *',
                                validators=[validate_cron],
@@ -300,9 +309,4 @@ class RepeatingTask(models.Model):
 
     @classmethod
     def schedule(cls, crontab, func, args=(), kwargs={}):
-        return RepeatingTask.objects.create(
-            crontab=crontab,
-            func_name=to_func_name(func),
-            args=args,
-            kwargs=kwargs
-        )
+        return schedule_task(cls, crontab, func, args, kwargs)

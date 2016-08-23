@@ -1,10 +1,12 @@
 from django.db import migrations
 from cq.tasks import clean_up
+from cq.models import schedule_task
 
 
 def add_clean_up(apps, scema_editor):
     RepeatingTask = apps.get_model('cq.RepeatingTask')
-    RepeatingTask.schedule(
+    schedule_task(
+        RepeatingTask,
         '0 0 * * *',
         clean_up
     )
