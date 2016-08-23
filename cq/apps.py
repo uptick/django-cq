@@ -2,6 +2,7 @@ from threading import Thread
 import logging
 
 from django.apps import AppConfig
+from django.conf import settings
 from channels.signals import worker_ready
 
 
@@ -28,5 +29,6 @@ class CqConfig(AppConfig):
 
     def ready(self):
         import cq.signals
-        launch_scheduler()
+        if getattr(settings, 'CQ_SCHEDULER', True):
+            launch_scheduler()
         worker_ready.connect(launch_checkin)

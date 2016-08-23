@@ -5,6 +5,8 @@
 
 An attempt implement a distributed task queue for use with Django channels.
 
+*This is very much pre-alpha.*
+
 
 ## Why
 

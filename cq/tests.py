@@ -2,7 +2,7 @@ from unittest.mock import patch
 from unittest import skip
 from datetime import datetime
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.conf import settings
 from channels.tests import TransactionChannelTestCase, ChannelTestCase
@@ -76,12 +76,13 @@ def task_j(task, a, b):
     return a + b
 
 
+@override_settings(CQ_SERIAL=False)
 class DecoratorTestCase(TransactionChannelTestCase):
     def test_adds_delay_function(self):
         self.assertTrue(hasattr(task_a, 'delay'))
         self.assertIsNot(task_a.delay, None)
 
-    def test_task_is_still_task(self):
+    def test_task_is_still_a_function(self):
         self.assertEqual(task_a(), 'a')
         self.assertEqual(Task.objects.all().count(), 0)
 
@@ -96,10 +97,7 @@ class DecoratorTestCase(TransactionChannelTestCase):
         self.assertLess(task.submitted, after)
 
 
-class TaskQueuedTestCase(TestCase):
-    pass
-
-
+@override_settings(CQ_SERIAL=False)
 class TaskSuccessTestCase(TransactionChannelTestCase):
     def test_something(self):
         task = task_a.delay()
@@ -108,6 +106,7 @@ class TaskSuccessTestCase(TransactionChannelTestCase):
         self.assertEqual(task.status, task.STATUS_SUCCESS)
 
 
+@override_settings(CQ_SERIAL=False)
 class TaskFailureTestCase(TransactionChannelTestCase):
     def test_something(self):
         task = task_b.delay()
@@ -121,6 +120,7 @@ class DBLatencyTestCase(TestCase):
     pass
 
 
+@override_settings(CQ_SERIAL=False)
 class AsyncSubtaskTestCase(TransactionChannelTestCase):
     def test_returns_own_result(self):
         task = task_d.delay()
@@ -193,6 +193,7 @@ class SerialSubtaskTestCase(TransactionChannelTestCase):
         self.assertEqual(result, 'a')
 
 
+@override_settings(CQ_SERIAL=False)
 class AsyncChainedTaskTestCase(TransactionChannelTestCase):
     def test_all(self):
         task = task_h.delay()
@@ -252,7 +253,8 @@ class PublishCurrentTestCase(TestCase):
 class CreateRepeatingTaskTestCase(TestCase):
     def test_create(self):
         rt = RepeatingTask.objects.create(func_name='cq.tests.task_a')
-        self.assertEqual(rt.next_run, croniter(rt.crontab).get_next(datetime))
+        next = croniter(rt.crontab, timezone.now()).get_next(datetime)
+        self.assertEqual(rt.next_run, next)
 
 
 class RunRepeatingTaskTestCase(TransactionChannelTestCase):

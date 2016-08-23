@@ -1,5 +1,8 @@
 from functools import wraps
 
+from django.core.management import call_command
+from django.conf import settings
+
 from .task import delay, SerialTask
 
 
@@ -13,7 +16,13 @@ class _task(object):
     def __call__(self, func):
         @wraps(func)
         def _delay(*args, **kwargs):
-            return delay(func, args, kwargs)
+            if getattr(settings, 'CQ_SERIAL', False):
+                # Create a SerialTask here to make sure we end up
+                # returning the task instead of the result.
+                kwargs['task'] = SerialTask()
+                return self.wrapper(func, args, kwargs)
+            else:
+                return delay(func, args, kwargs)
 
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -24,10 +33,29 @@ class _task(object):
 
     def wrapper(self, func, args, kwargs):
         task = kwargs.pop('task', None)
-        if task is None:
+        direct = task is None
+        serial = isinstance(task, SerialTask)
+        if direct or serial:
             task = SerialTask()
-        return func(task, *args, **kwargs)
+        result = func(task, *args, **kwargs)
+        if direct or serial:
+            while isinstance(result, SerialTask):
+                result = result.result
+            task.result = result
+            if direct:
+                return task.result
+            else:
+                return task
+        else:
+            return result
 
 
 def task(func):
     return _task()(func)
+
+
+@task
+def call_command_task(task, *args, **kwargs):
+    """A wrapper to call management commands.
+    """
+    return call_command(*args, **kwargs)
