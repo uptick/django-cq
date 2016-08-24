@@ -4,6 +4,8 @@
 ## Description
 
 An attempt to implement a distributed task queue for use with Django channels.
+Modelled after RQ and Celery, complex task workflows are possible, all leveraging
+the Channels machinery.
 
 *This is very much pre-alpha.*
 
@@ -17,8 +19,7 @@ There are two reasons:
     important tasks, this should be stored even in the case of a Redis fault, or if
     the worker goes down.
 
- 2. Prefer to leverage the same machinery as channels. We're alrady running a worker
-    queue, let's use it.
+ 2. Prefer to leverage the same machinery as channels. Why double up?
 
 
 ## Installation
