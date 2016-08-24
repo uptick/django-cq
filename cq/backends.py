@@ -2,15 +2,14 @@ import random
 import time
 from datetime import timedelta
 import logging
-import threading
 
 from channels import Channel
 from django_redis import get_redis_connection
 from django.utils import timezone
 from django.db.utils import ProgrammingError
+from django.core.cache import cache
 
-from .models import Task, RepeatingTask
-from .utils import rlock
+from .models import RepeatingTask
 
 
 logger = logging.getLogger('cq')
@@ -80,7 +79,7 @@ def worker_publish_current(*args, **kwargs):
 
 
 def perform_scheduling():
-    with rlock('cq:scheduler:lock'):
+    with cache.lock('cq:scheduler:lock'):
         logger.debug('Checking for scheduled tasks.')
         now = timezone.now()
         try:

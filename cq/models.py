@@ -9,12 +9,13 @@ from django.db import models, transaction
 from django.contrib.postgres.fields import JSONField
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+from django.core.cache import cache
 from channels import Channel
 from asgi_redis import RedisChannelLayer
 from croniter import croniter
 
 from .signature import from_signature, to_signature, to_func_name
-from .utils import rlock, import_attribute
+from .utils import import_attribute
 
 
 logger = logging.getLogger('cq')
@@ -89,7 +90,7 @@ class Task(models.Model):
     def submit(self, *pre_args):
         """To be run from server.
         """
-        with rlock(self.id):
+        with cache.lock(str(self.id)):
             if self.status != self.STATUS_PENDING:
                 msg = 'Task {} cannot be submitted multiple times.'
                 msg = msg.format(self.id)
