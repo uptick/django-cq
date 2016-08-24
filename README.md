@@ -124,3 +124,20 @@ parent.status == Task.STATUS_COMPLETE  # True
 def calculate_something(task):
     return calc_a.delay(3).chain(add_a_to_4, (4,))
 ```
+
+
+## Repeating Tasks
+
+CQ comes with basic repeating tasks. There are two ways to create
+repeating tasks:
+
+ 1. From the Django admin.
+
+ 2. Using a data migration.
+
+TODO
+
+
+## Time-to-live
+
+TODO
