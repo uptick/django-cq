@@ -114,6 +114,7 @@ parent.status == Task.STATUS_WAITING  # True
 # once task_b completes
 parent.wait()
 parent.status == Task.STATUS_COMPLETE  # True
+```
 
 
 ## Chained Tasks
