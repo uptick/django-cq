@@ -10,7 +10,7 @@ logger = logging.getLogger('cq')
 
 
 def launch_scheduler(*args, **kwargs):
-    from .backends import scheduler
+    from .scheduler import scheduler
     logger.info('Launching CQ scheduler.')
     thread = Thread(name='scheduler', target=scheduler)
     thread.daemon = True

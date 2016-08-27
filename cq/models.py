@@ -45,6 +45,8 @@ class Task(models.Model):
     STATUS_DONE = {STATUS_FAILURE, STATUS_SUCCESS, STATUS_INCOMPLETE,
                    STATUS_LOST}
     STATUS_ERROR = {STATUS_FAILURE, STATUS_LOST, STATUS_INCOMPLETE}
+    STATUS_ACTIVE = {STATUS_PENDING, STATUS_QUEUED, STATUS_RUNNING,
+                     STATUS_WAITING}
 
     AT_RISK_NONE = 'N'
     AT_RISK_QUEUED = 'Q'
@@ -116,8 +118,9 @@ class Task(models.Model):
                 'task_id': str(self.id)
             })
         except RedisChannelLayer.ChannelFull:
-            self.status = self.STATUS_RETRY
-            self.save(update_fields=('status',))
+            with cache.lock(str(self.id)):
+                self.status = self.STATUS_RETRY
+                self.save(update_fields=('status',))
 
     def wait(self, timeout=2000):
         """Wait for task to finish. To be called from server.
@@ -317,12 +320,18 @@ class RepeatingTask(models.Model):
 
     def submit(self):
         from .task import delay
+        if self.coalesce and Task.objects.filter(
+                signature__func_name=self.func_name,
+        ).exclude(status__in=Task.STATUS_DONE).exists():
+            logger.info('Coalescing task: {}'.format(self.func_name))
+            return None
         logger.info('Launching scheduled task: {}'.format(self.func_name))
-        task = delay(self.func_name, tuple(self.args), self.kwargs,
-                     result_ttl=self.result_ttl)
-        self.last_run = timezone.now()
-        self.update_next_run()
-        self.save(update_fields=('last_run', 'next_run'))
+        with transaction.atomic():
+            task = delay(self.func_name, tuple(self.args), self.kwargs,
+                         result_ttl=self.result_ttl)
+            self.last_run = timezone.now()
+            self.update_next_run()
+            self.save(update_fields=('last_run', 'next_run'))
         return task
 
     def update_next_run(self):

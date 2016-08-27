@@ -5,6 +5,7 @@ from django.core.management.base import BaseCommand, CommandError
 from asgi_redis import RedisChannelLayer
 from cq.decorators import task
 from cq.models import Task
+from cq.task import delay
 
 
 @task
@@ -67,10 +68,20 @@ def task_root(task):
 class Command(BaseCommand):
     help = 'CQ load test.'
 
-    # def add_arguments(self, parser):
-    #     parser.add_argument(')
+    def add_arguments(self, parser):
+        parser.add_argument('--lost', action='store_true')
 
     def handle(self, *args, **options):
+        if options.get('lost', True):
+            self.launch_lost()
+        else:
+            self.launch_one()
+
+    def launch_lost(self):
+        for ii in range(200):
+            delay(task_root, (), {}, submit=False, status=Task.STATUS_RETRY)
+
+    def launch_one(self):
         root = task_root.delay()
         root.wait()
         for trunk in root.subtasks.all():

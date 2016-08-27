@@ -5,7 +5,8 @@ from .models import Task, RepeatingTask
 
 @admin.register(Task)
 class TaskAdmin(admin.ModelAdmin):
-    list_display = ('id', 'func_name', 'status')
+    list_display = ('id', 'submitted', 'func_name', 'status')
+    list_filter = ('status',)
 
 
 @admin.register(RepeatingTask)

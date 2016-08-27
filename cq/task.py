@@ -52,7 +52,8 @@ def chain(func, args, kwargs, parent=None, previous=None, **_kwargs):
     return task
 
 
-def delay(func, args, kwargs, parent=None, **_kwargs):
+def delay(func, args, kwargs, parent=None, submit=True, **_kwargs):
     task = chain(func, args, kwargs, parent, **_kwargs)
-    task.submit()
+    if submit:
+        task.submit()
     return task
