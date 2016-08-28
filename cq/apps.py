@@ -3,7 +3,8 @@ import logging
 
 from django.apps import AppConfig
 from django.conf import settings
-from channels.signals import worker_ready
+from django.utils.module_loading import import_module
+from channels.signals import worker_process_ready
 
 
 logger = logging.getLogger('cq')
@@ -18,10 +19,18 @@ def launch_scheduler(*args, **kwargs):
 
 
 def launch_checkin(*args, **kwargs):
-    from .backends import worker_publish_current
-    thread = Thread(name='checkin', target=worker_publish_current)
+    from .backends import backend
+    thread = Thread(name='checkin', target=backend.publish_current)
     thread.daemon = True
     thread.start()
+
+
+def scan_tasks(*args, **kwargs):
+    for app_name in settings.INSTALLED_APPS:
+        try:
+            import_module('.'.join([app_name, 'tasks']))
+        except ImportError:
+            pass
 
 
 class CqConfig(AppConfig):
@@ -30,5 +39,6 @@ class CqConfig(AppConfig):
     def ready(self):
         import cq.signals
         if getattr(settings, 'CQ_SCHEDULER', True):
-            worker_ready.connect(launch_scheduler)
-        worker_ready.connect(launch_checkin)
+            worker_process_ready.connect(launch_scheduler)
+        worker_process_ready.connect(scan_tasks)
+        worker_process_ready.connect(launch_checkin)

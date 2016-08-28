@@ -4,8 +4,7 @@ import sys
 from django.core.management.base import BaseCommand, CommandError
 from asgi_redis import RedisChannelLayer
 from cq.decorators import task
-from cq.models import Task
-from cq.task import delay
+from cq.models import Task, delay
 
 
 @task

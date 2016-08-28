@@ -1,4 +1,17 @@
+import six
+import inspect
 import importlib
+
+
+def to_import_string(func):
+    if inspect.isfunction(func) or inspect.isbuiltin(func):
+        name = '{0}.{1}'.format(func.__module__, func.__name__)
+    elif isinstance(func, six.string_types):
+        name = str(func)
+    else:
+        msg = 'Expected a callable or a string, but got: {}'.format(func)
+        raise TypeError(msg)
+    return name
 
 
 def import_attribute(name):

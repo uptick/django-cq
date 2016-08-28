@@ -14,7 +14,8 @@ from channels import Channel
 from asgi_redis import RedisChannelLayer
 from croniter import croniter
 
-from .signature import from_signature, to_signature, to_func_name
+from .task import from_signature, to_signature, to_func_name
+from .managers import TaskManager
 from .utils import import_attribute
 
 
@@ -22,6 +23,8 @@ logger = logging.getLogger('cq')
 
 
 class Task(models.Model):
+    """A persistent representation of a background task.
+    """
     STATUS_PENDING = 'P'
     STATUS_RETRY = 'Y'
     STATUS_QUEUED = 'Q'
@@ -75,6 +78,8 @@ class Task(models.Model):
     at_risk = models.CharField(max_length=1, choices=AT_RISK_CHOICES,
                                default=AT_RISK_NONE)
 
+    objects = TaskManager()
+
     class Meta:
         ordering = ('-submitted',)
 
@@ -122,24 +127,30 @@ class Task(models.Model):
                 self.status = self.STATUS_RETRY
                 self.save(update_fields=('status',))
 
-    def wait(self, timeout=2000):
+    def wait(self, timeout=None):
         """Wait for task to finish. To be called from server.
         """
         start = timezone.now()
-        end = start + timedelta(milliseconds=timeout)
+        end = start
+        if timeout is not None:
+            start += timedelta(milliseconds=timeout)
         delta = timedelta(milliseconds=500)
         self.refresh_from_db()
-        while self.status not in self.STATUS_DONE and start < end:
+        while self.status not in self.STATUS_DONE and (timeout is None or start < end):
             time.sleep(0.5)
             self.refresh_from_db()
             start += delta
 
-    def start(self, result=None):
-        """To be run from workers.
-        """
+    def pre_start(self):
         self.status = self.STATUS_RUNNING
         self.started = timezone.now()
         self.save(update_fields=('status', 'started'))
+
+    def start(self, result=None, pre_start=True):
+        """To be run from workers.
+        """
+        if pre_start:
+            self.pre_start()
         func, args, kwargs = from_signature(self.signature)
         if result is not None:
             args = (result,) + tuple(args)
@@ -152,7 +163,6 @@ class Task(models.Model):
         Subtasks are run at the same time as the current task. The current
         task will not be considered complete until the subtask finishes.
         """
-        from .task import delay
         return delay(func, args, kwargs, parent=self)
 
     def chain(self, func, args=(), kwargs={}):
@@ -161,7 +171,6 @@ class Task(models.Model):
         Chained tasks are run after completion of the current task, and are
         passed the result of the current task.
         """
-        from .task import chain
         return chain(func, args, kwargs, previous=self)
 
     def waiting(self, task=None, result=None):
@@ -283,24 +292,19 @@ def validate_cron(value):
 
 
 def validate_func_name(value):
+    """Try to import a function before accepting it.
+    """
     try:
         import_attribute(value)
     except:
         raise ValidationError('Unable to import task.')
 
 
-def schedule_task(cls, crontab, func, args=(), kwargs={}, **_kwargs):
-    return cls.objects.create(
-        crontab=crontab,
-        func_name=to_func_name(func),
-        args=args,
-        kwargs=kwargs,
-        next_run=croniter(crontab, timezone.now()).get_next(datetime),
-        **_kwargs
-    )
-
-
 class RepeatingTask(models.Model):
+    """Basic repeating tasks.
+
+    Uses CRON style strings to set repeating tasks.
+    """
     crontab = models.CharField(max_length=100, default='* * * * *',
                                validators=[validate_cron],
                                help_text='Minute Hour Day Month Weekday')
@@ -319,19 +323,17 @@ class RepeatingTask(models.Model):
             return self.func_name
 
     def submit(self):
-        from .task import delay
-        if self.coalesce and Task.objects.filter(
-                signature__func_name=self.func_name,
-        ).exclude(status__in=Task.STATUS_DONE).exists():
+        if self.coalesce and Task.objects.active(signature__func_name=self.func_name):
             logger.info('Coalescing task: {}'.format(self.func_name))
             return None
         logger.info('Launching scheduled task: {}'.format(self.func_name))
         with transaction.atomic():
             task = delay(self.func_name, tuple(self.args), self.kwargs,
-                         result_ttl=self.result_ttl)
+                         submit=False, result_ttl=self.result_ttl)
             self.last_run = timezone.now()
             self.update_next_run()
             self.save(update_fields=('last_run', 'next_run'))
+        task.submit()
         return task
 
     def update_next_run(self):
@@ -340,3 +342,42 @@ class RepeatingTask(models.Model):
     @classmethod
     def schedule(cls, crontab, func, args=(), kwargs={}):
         return schedule_task(cls, crontab, func, args, kwargs)
+
+
+def schedule_task(cls, crontab, func, args=(), kwargs={}, **_kwargs):
+    """Create a repeating task.
+    """
+    # This is mostly for creating scheduled tasks in migrations. The
+    # signals don't run in migrations, so we need to explicitly set
+    # the `next_run` value.
+    return cls.objects.create(
+        crontab=crontab,
+        func_name=to_func_name(func),
+        args=args,
+        kwargs=kwargs,
+        next_run=croniter(crontab, timezone.now()).get_next(datetime),
+        **_kwargs
+    )
+
+
+def chain(func, args, kwargs, parent=None, previous=None, **task_args):
+    """Run a task after an existing task.
+
+    The result is passed as the first argument to the chained task.
+    If no parent is specified, automatically use the parent of the
+    predecessor. Note that I'm not sure this is the correct behavior,
+    but is useful for making sure logs to where they should.
+    """
+    sig = to_signature(func, args, kwargs)
+    if parent is None and previous:
+        parent = previous.parent
+    task = Task.objects.create(signature=sig, parent=parent, previous=previous,
+                               **task_args)
+    return task
+
+
+def delay(func, args, kwargs, parent=None, submit=True, **task_args):
+    task = chain(func, args, kwargs, parent, **task_args)
+    if submit:
+        task.submit()
+    return task

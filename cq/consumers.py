@@ -4,7 +4,7 @@ from django.db import transaction
 
 from .models import Task
 from .task import SerialTask
-from .backends import set_current_task
+from .backends import backend
 
 
 logger = logging.getLogger('cq')
@@ -14,10 +14,11 @@ def run_task(message):
     task_id = message['task_id']
     task = Task.objects.get(id=task_id)
     logger.info('Running task: {}'.format(task.signature['func_name']))
-    set_current_task(task_id)
+    backend.set_current_task(task_id)
+    task.pre_start()
     with transaction.atomic():
         try:
-            result = task.start()
+            result = task.start(pre_start=False)
         except Exception as err:
             task.failure(err)
         else:
@@ -31,4 +32,4 @@ def run_task(message):
                 else:
                     task.success(result)
         finally:
-            set_current_task()
+            backend.set_current_task()

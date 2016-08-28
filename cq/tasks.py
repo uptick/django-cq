@@ -1,13 +1,14 @@
 from django.utils import timezone
 from django.core.cache import cache
+from django.core.management import call_command
 
-from .backends import get_queued_tasks, get_running_tasks
+from .backends import backend
 from .decorators import task
 from .models import Task
 
 
 @task
-def clean_up(task):
+def clean_up(task, *args):
     """Remove stale tasks.
 
     Removes tasks that succeeded that are a week or older. Also
@@ -24,7 +25,7 @@ def clean_up(task):
 
 
 @task
-def retry_tasks(cqtask):
+def retry_tasks(cqtask, *args):
     retry = Task.objects.filter(status=Task.STATUS_RETRY)[:20]  # Cap at 20
     for task in retry:
         cqtask.log('Retrying: {}'.format(task.id))
@@ -32,9 +33,11 @@ def retry_tasks(cqtask):
 
 
 @task
-def check_lost(cqtask):
-    running_task_ids = get_running_tasks()
-    queued_task_ids = get_queued_tasks()
+def check_lost(cqtask, *args):
+    running_task_ids = backend.get_running_tasks()
+    cqtask.log('Running tasks: {}'.format(running_task_ids))
+    queued_task_ids = backend.get_queued_tasks()
+    cqtask.log('Queued tasks: {}'.format(queued_task_ids))
     queued_tasks = Task.objects.filter(status=Task.STATUS_QUEUED)
     running_tasks = Task.objects.filter(status=Task.STATUS_RUNNING)
     for task in queued_tasks:
@@ -57,3 +60,17 @@ def check_lost(cqtask):
                 else:
                     task.at_risk = Task.AT_RISK_RUNNING
                     task.save(update_fields=['at_risk'])
+
+
+@task
+def maintenance(task):
+    retry_tasks()
+    check_lost()
+    clean_up()
+
+
+@task
+def call_command_task(task, *args, **kwargs):
+    """A wrapper to call management commands.
+    """
+    return call_command(*args, **kwargs)
