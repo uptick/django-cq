@@ -350,12 +350,13 @@ def schedule_task(cls, crontab, func, args=(), kwargs={}, **_kwargs):
     # This is mostly for creating scheduled tasks in migrations. The
     # signals don't run in migrations, so we need to explicitly set
     # the `next_run` value.
+    next = croniter(crontab, timezone.localtime(timezone.now())).get_next(datetime)
     return cls.objects.create(
         crontab=crontab,
         func_name=to_func_name(func),
         args=args,
         kwargs=kwargs,
-        next_run=croniter(crontab, timezone.now()).get_next(datetime),
+        next_run=next,
         **_kwargs
     )
 
