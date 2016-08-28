@@ -20,7 +20,10 @@ class Backend(object):
             if task_id is not None:
                 cls.current_tasks[t] = task_id
             else:
-                del cls.current_tasks[t]
+                try:
+                    del cls.current_tasks[t]
+                except KeyError:
+                    pass
 
     @classmethod
     def get_queued_tasks(cls):
