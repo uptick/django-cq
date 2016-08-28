@@ -337,7 +337,7 @@ class RepeatingTask(models.Model):
         return task
 
     def update_next_run(self):
-        self.next_run = croniter(self.crontab, timezone.now()).get_next(datetime)
+        self.next_run = croniter(self.crontab, timezone.localtime(timezone.now())).get_next(datetime)
 
     @classmethod
     def schedule(cls, crontab, func, args=(), kwargs={}):
