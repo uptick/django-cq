@@ -79,7 +79,7 @@ class Backend(object):
     @classmethod
     def clear_inactive(cls):
         to_del = [t for t in cls.current_tasks.keys()
-                  if t == threading.main_thread() or not t.is_alive()]
+                  if (t != threading.main_thread() and not t.is_alive())]
         for t in to_del:
             del cls.current_tasks[t]
 
