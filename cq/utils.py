@@ -8,6 +8,8 @@ def to_import_string(func):
         name = '{0}.{1}'.format(func.__module__, func.__name__)
     elif isinstance(func, six.string_types):
         name = str(func)
+    elif inspect.isclass(func):
+        return '{0}.{1}'.format(func.__module__, func.__name__)
     else:
         msg = 'Expected a callable or a string, but got: {}'.format(func)
         raise TypeError(msg)

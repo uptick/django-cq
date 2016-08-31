@@ -158,7 +158,7 @@ class AsyncSubtaskTestCase(TransactionChannelTestCase):
         task = task_e.delay()
         run_task(self.get_next_message('cq-tasks', require=True))
         run_task(self.get_next_message('cq-tasks', require=True))
-        task.wait()
+        task.wait(500)
         task.refresh_from_db()
         self.assertEqual(task.status, task.STATUS_WAITING)
         subtask = task.subtasks.first()

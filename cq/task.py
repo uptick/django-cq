@@ -17,14 +17,6 @@ def to_func_name(func):
     return TaskFunc.get_name(to_import_string(func))
 
 
-def to_class_name(cls):
-    return '{0}.{1}'.format(cls.__module__, cls.__name__)
-
-
-def from_class_name(name):
-    return TaskFunc.get_task_func(sig['func_name'])
-
-
 def to_signature(func, args, kwargs):
     return {
         'func_name': to_func_name(func),
