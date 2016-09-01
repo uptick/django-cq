@@ -1,6 +1,7 @@
 import time
 from datetime import timedelta
 import logging
+from traceback import format_exc
 
 from django.utils import timezone
 from django.db.utils import ProgrammingError
@@ -20,7 +21,11 @@ def perform_scheduling():
         try:
             rtasks = RepeatingTask.objects.filter(next_run__lte=now)
             for rt in rtasks:
-                rt.submit()
+                try:
+                    rt.submit()
+                except:
+                    # Don't terminate if a submit fails.
+                    logger.error(format_exc())
         except ProgrammingError:
             logger.warning('CQ scheduler not running, DB is out of date.')
 
@@ -44,5 +49,5 @@ def scheduler(*args, **kwargs):
         try:
             scheduler_internal()
         except Exception as ex:
-            logger.error(str(ex))
+            logger.error(format_exc())
             time.sleep(0.5)
