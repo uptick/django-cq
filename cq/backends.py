@@ -4,7 +4,9 @@ import time
 import logging
 
 from channels import Channel
-from django_redis import get_redis_connection
+from redis.exceptions import RedisError
+
+from .utils import redis_connection
 
 
 logger = logging.getLogger('cq')
@@ -50,12 +52,12 @@ class Backend(object):
 
     @classmethod
     def get_running_tasks(cls):
-        conn = get_redis_connection()
-        pipe = conn.pipeline()
-        pipe.lrange('cq:current', 0, -1)
-        pipe.delete('cq:current')
-        results = pipe.execute()
-        return set([x.decode() for x in results[0]])
+        with redis_connection() as conn:
+            pipe = conn.pipeline()
+            pipe.lrange('cq:current', 0, -1)
+            pipe.delete('cq:current')
+            results = pipe.execute()
+            return set([x.decode() for x in results[0]])
 
     @classmethod
     def publish_current(cls, *args, **kwargs):
@@ -69,8 +71,11 @@ class Backend(object):
             task_ids = [x for x in cls.current_tasks.values()]
             if task_ids:
                 logger.debug('Publishing tasks: {}'.format(task_ids))
-                conn = get_redis_connection()
-                conn.lpush('cq:current', *task_ids)
+                try:
+                    with redis_connection() as conn:
+                        conn.lpush('cq:current', *task_ids)
+                except RedisError:
+                    pass
                 cls.clear_inactive()
             if max_its is not None:
                 cur_it += 1
@@ -85,8 +90,8 @@ class Backend(object):
 
     @classmethod
     def clear_current(cls):
-        conn = get_redis_connection()
-        conn.delete('cq:current')
+        with redis_connection() as conn:
+            conn.delete('cq:current')
 
 
 backend = Backend()

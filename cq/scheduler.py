@@ -2,12 +2,12 @@ import time
 from datetime import timedelta
 import logging
 
-from django_redis import get_redis_connection
 from django.utils import timezone
 from django.db.utils import ProgrammingError
 from django.core.cache import cache
 
 from .models import RepeatingTask
+from .utils import redis_connection
 
 
 logger = logging.getLogger('cq')
@@ -25,13 +25,24 @@ def perform_scheduling():
             logger.warning('CQ scheduler not running, DB is out of date.')
 
 
-def scheduler(*args, **kwargs):
-    while 1:
-        conn = get_redis_connection()
+def scheduler_internal():
+    am_scheduler = False
+    with redis_connection() as conn:
         if conn.setnx('cq:scheduler', 'dummy'):
             conn.expire('cq:scheduler', 30)
-            perform_scheduling()
-        now = timezone.now()
-        delay = ((now + timedelta(minutes=1)).replace(second=0, microsecond=0) - now).total_seconds()
-        logger.debug('Waiting {} seconds for next schedule attempt.'.format(delay))
-        time.sleep(delay)
+            am_scheduler = True
+    if am_scheduler:
+        perform_scheduling()
+    now = timezone.now()
+    delay = ((now + timedelta(minutes=1)).replace(second=0, microsecond=0) - now).total_seconds()
+    logger.debug('Waiting {} seconds for next schedule attempt.'.format(delay))
+    time.sleep(delay)
+
+
+def scheduler(*args, **kwargs):
+    while 1:
+        try:
+            scheduler_internal()
+        except Exception as ex:
+            logger.error(str(ex))
+            time.sleep(0.5)

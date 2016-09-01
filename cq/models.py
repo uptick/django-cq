@@ -232,6 +232,7 @@ class Task(models.Model):
             logger.info('Task failed: {}'.format(self.func_name))
             self.status = self.STATUS_FAILURE
         self.details['error'] = str(err)
+        self.details['exception'] = err.__class__.__name__
         self.finished = timezone.now()
         self.save(update_fields=('status', 'details', 'finished'))
         if self.parent:
