@@ -45,7 +45,6 @@ def redis_connection(retries=3, sleep_time=0.5):
             retries -= 1
             time.sleep(sleep_time)
     try:
-        logger.debug('Using connection, {}, at {}'.format(conn, hex(id(conn))))
         yield conn
     finally:
         pass
