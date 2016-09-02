@@ -97,7 +97,7 @@ class Task(models.Model):
     def submit(self, *pre_args):
         """To be run from server.
         """
-        with cache.lock(str(self.id)):
+        with cache.lock(str(self.id), timeout=2):
             if self.status != self.STATUS_PENDING:
                 msg = 'Task {} cannot be submitted multiple times.'
                 msg = msg.format(self.id)

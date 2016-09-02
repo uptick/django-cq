@@ -15,7 +15,7 @@ logger = logging.getLogger('cq')
 
 
 def perform_scheduling():
-    with cache.lock('cq:scheduler:lock'):
+    with cache.lock('cq:scheduler:lock', timeout=10):
         logger.debug('Checking for scheduled tasks.')
         now = timezone.now()
         try:
@@ -31,6 +31,7 @@ def perform_scheduling():
 
 
 def scheduler_internal():
+    logger.debug('Determining winning scheduler.')
     am_scheduler = False
     with redis_connection() as conn:
         if conn.setnx('cq:scheduler', 'dummy'):
@@ -45,6 +46,7 @@ def scheduler_internal():
 
 
 def scheduler(*args, **kwargs):
+    logger.debug('Scheduler thread active.')
     while 1:
         try:
             scheduler_internal()
