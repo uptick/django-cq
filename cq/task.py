@@ -73,7 +73,13 @@ class TaskFunc(object):
         serial = isinstance(task, SerialTask)
         if direct or serial:
             task = SerialTask()
-        result = func(task, *args, **kwargs)
+        try:
+            result = func(task, *args, **kwargs)
+        except Exception as err:
+            if serial:
+                for func, args, kwargs in task._errbacks:
+                    func(*((task, err,) + tuple(args)), **kwargs)
+            raise
         if direct or serial:
             while isinstance(result, SerialTask):
                 result = result.result
@@ -99,7 +105,11 @@ class TaskFunc(object):
 
     @classmethod
     def get_name(cls, func_name):
-        return cls.task_table[func_name].name or func_name
+        try:
+            task = cls.task_table[func_name]
+        except KeyError:
+            return func_name
+        return task.name or func_name
 
 
 class SerialTask(object):
@@ -108,6 +118,7 @@ class SerialTask(object):
     def __init__(self, result=None):
         self.id = uuid.uuid4()
         self.result = result
+        self._errbacks = []
 
     def subtask(self, func, args=(), kwargs={}):
         # Note: A serial task will automatically be created.
@@ -119,6 +130,9 @@ class SerialTask(object):
             all_args = (self.result,) + args
         # Note: A serial task will automatically be created.
         return func(*all_args, task=self, **kwargs)
+
+    def errorback(self, func, args=(), kwargs={}):
+        self._errbacks.append((func, args, kwargs))
 
     def log(self, msg):
         logger.info(msg)

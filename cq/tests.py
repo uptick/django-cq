@@ -83,6 +83,17 @@ def task_j(task, a, b):
     return a + b
 
 
+def errback(task, error):
+    pass
+
+
+@task('k')
+def task_k(task, error=False):
+    task.errorback(errback)
+    if error:
+        raise Exception
+
+
 @override_settings(CQ_SERIAL=False)
 class DecoratorTestCase(TransactionChannelTestCase):
     def test_adds_delay_function(self):
@@ -121,6 +132,11 @@ class TaskFailureTestCase(TransactionChannelTestCase):
         task.wait()
         self.assertEqual(task.status, task.STATUS_FAILURE)
         self.assertIsNot(task.error, None)
+
+    def test_errorbacks(self):
+        task = task_k.delay(error=True)
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.wait()
 
 
 class DBLatencyTestCase(TestCase):

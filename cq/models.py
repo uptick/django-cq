@@ -1,5 +1,6 @@
 import re
 import time
+import json
 from datetime import datetime
 from datetime import timedelta
 import uuid
@@ -123,7 +124,7 @@ class Task(models.Model):
                 'task_id': str(self.id)
             })
         except RedisChannelLayer.ChannelFull:
-            with cache.lock(str(self.id)):
+            with cache.lock(str(self.id), timeout=2):
                 self.status = self.STATUS_RETRY
                 self.save(update_fields=('status',))
 
@@ -173,6 +174,12 @@ class Task(models.Model):
         """
         return chain(func, args, kwargs, previous=self)
 
+    def errorback(self, func, args=(), kwargs={}):
+        self.details.setdefault('errbacks', []).append(
+            to_signature(func, args, kwargs)
+        )
+        self.save(update_fields=('details',))
+
     def waiting(self, task=None, result=None):
         logger.info('Waiting task: {}'.format(self.func_name))
         self.status = self.STATUS_WAITING
@@ -200,6 +207,7 @@ class Task(models.Model):
             self.details['result'] = result
         self.finished = timezone.now()
         self.result_expiry = self.finished + timedelta(seconds=self.result_ttl)
+        self._store_logs()
         with transaction.atomic():
             self.save(update_fields=('status', 'details', 'finished', 'result_expiry'))
             transaction.on_commit(lambda: self.post_success(self.result))
@@ -209,6 +217,11 @@ class Task(models.Model):
             self.parent.child_succeeded(self, result)
         for next in self.next.all():
             next.submit(result)
+
+    def _store_logs(self):
+        key = self._get_log_key()
+        logs = json.loads(cache.get(key, '[]'))
+        self.details['logs'] = logs
 
     def child_succeeded(self, task, result):
         logger.info('Task child succeeded: {}'.format(self.func_name))
@@ -234,9 +247,13 @@ class Task(models.Model):
         self.details['error'] = str(err)
         self.details['exception'] = err.__class__.__name__
         self.finished = timezone.now()
+        self._store_logs()
         self.save(update_fields=('status', 'details', 'finished'))
         if self.parent:
             self.parent.failure(err)
+        for eb in self.details.get('errbacks', []):
+            func, args, kwargs = from_signature(eb)
+            func(*((self, err,) + tuple(args)), **kwargs)
 
     def log(self, msg, origin=None):
         """Log to the task, and to the system logger.
@@ -253,7 +270,10 @@ class Task(models.Model):
             }
             if origin:
                 data['origin'] = origin.id
-            self.details.setdefault('logs', []).append(data)
+            key = self._get_log_key()
+            logs = json.loads(cache.get(key, '[]'))
+            logs.append(data)
+            cache.set(key, json.dumps(logs))
 
     @property
     def result(self):
@@ -265,14 +285,22 @@ class Task(models.Model):
 
     @property
     def logs(self):
-        return self.details.get('logs', [])
+        logs = cache.get(self._get_log_key(), None)
+        if logs is None:
+            logs = self.details.get('logs', [])
+        else:
+            logs = json.loads(logs)
+        return logs
 
     @property
     def func_name(self):
         return self.signature.get('func_name', None)
 
     def format_logs(self):
-        return '\n'.join([l.message for l in self.logs])
+        return '\n'.join([l['message'] for l in self.logs])
+
+    def _get_log_key(self):
+        return 'cq:{}:logs'.format(self.id)
 
 
 def validate_cron(value):
