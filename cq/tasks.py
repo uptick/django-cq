@@ -42,7 +42,7 @@ def check_lost(cqtask, *args):
     running_tasks = Task.objects.filter(status=Task.STATUS_RUNNING)
     for task in queued_tasks:
         if str(task.id) not in queued_task_ids:
-            with cache.lock(str(task.id), timeout=0.1):
+            with cache.lock(str(task.id), timeout=2):
                 if task.at_risk == Task.AT_RISK_QUEUED:
                     cqtask.log('Lost in queue: {}'.format(task.id))
                     task.status = Task.STATUS_RETRY
@@ -52,7 +52,7 @@ def check_lost(cqtask, *args):
                     task.save(update_fields=['at_risk'])
     for task in running_tasks:
         if str(task.id) not in running_task_ids:
-            with cache.lock(str(task.id), timeout=0.1):
+            with cache.lock(str(task.id), timeout=2):
                 if task.at_risk == Task.AT_RISK_RUNNING:
                     cqtask.log('Lost on worker: {}'.format(task.id))
                     task.status = Task.STATUS_LOST
