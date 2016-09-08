@@ -5,7 +5,10 @@ from datetime import datetime
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.conf import settings
-from django.urls import reverse
+try:
+    from django.urls import reverse
+except ImportError:
+    from django.core.urlresolvers import reverse
 from django.contrib.auth import get_user_model
 from channels.tests import (
     TransactionChannelTestCase, ChannelTestCase
@@ -294,11 +297,22 @@ class RunRepeatingTaskTestCase(TransactionChannelTestCase):
 
 class ViewTestCase(ChannelTestCaseMixin, APITransactionTestCase):
     def setUp(self):
-        self.user = User.objects.create(
-            username='a', email='a@a.org', password='a'
-        )
+        try:
+            self.user = User.objects.create(
+                username='a', email='a@a.org', password='a'
+            )
+        except:
+            self.user = User.objects.create(
+                email='a@a.org', password='a'
+            )
 
     def test_create_and_get_task(self):
+
+        # If the views aren't available, don't test.
+        try:
+            reverse('cqtask-list')
+        except:
+            return
 
         # Check task creation.
         data = {

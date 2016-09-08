@@ -35,6 +35,7 @@ class Task(models.Model):
     STATUS_WAITING = 'W'
     STATUS_INCOMPLETE = 'I'
     STATUS_LOST = 'L'
+    STATUS_REVOKED = 'E'
     STATUS_CHOICES = (
         (STATUS_PENDING, 'Pending'),
         (STATUS_RETRY, 'Retry'),
@@ -44,11 +45,13 @@ class Task(models.Model):
         (STATUS_SUCCESS, 'Success'),
         (STATUS_WAITING, 'Waiting'),
         (STATUS_INCOMPLETE, 'Incomplete'),
-        (STATUS_LOST, 'Lost')
+        (STATUS_LOST, 'Lost'),
+        (STATUS_REVOKED, 'Revoked')
     )
     STATUS_DONE = {STATUS_FAILURE, STATUS_SUCCESS, STATUS_INCOMPLETE,
-                   STATUS_LOST}
-    STATUS_ERROR = {STATUS_FAILURE, STATUS_LOST, STATUS_INCOMPLETE}
+                   STATUS_LOST, STATUS_REVOKED}
+    STATUS_ERROR = {STATUS_FAILURE, STATUS_LOST, STATUS_INCOMPLETE,
+                    STATUS_REVOKED}
     STATUS_ACTIVE = {STATUS_PENDING, STATUS_QUEUED, STATUS_RUNNING,
                      STATUS_WAITING}
 
@@ -99,7 +102,15 @@ class Task(models.Model):
         """To be run from server.
         """
         with cache.lock(str(self.id), timeout=2):
-            if self.status != self.STATUS_PENDING:
+
+            # Need to reload just in case we've been modified elsewhere.
+            self.refresh_from_db()
+
+            # If we've been moved to revoke, don't run. If we're anything
+            # other than pending, error.
+            if self.status == self.STATUS_REVOKED:
+                return
+            elif self.status != self.STATUS_PENDING:
                 msg = 'Task {} cannot be submitted multiple times.'
                 msg = msg.format(self.id)
                 raise Exception(msg)
@@ -157,6 +168,14 @@ class Task(models.Model):
             args = (result,) + tuple(args)
         with transaction.atomic():
             return func(*args, task=self, **kwargs)
+
+    def revoke(self):
+        with cache.lock(str(self.id), timeout=2):
+            if self.status not in self.STATUS_DONE:
+                self.status = self.STATUS_REVOKED
+                self.save(update_fields=('status',))
+                for child in Task.objects.filter(parent=self):
+                    child.revoke()
 
     def subtask(self, func, args=(), kwargs={}):
         """Launch a subtask.
@@ -390,7 +409,8 @@ def schedule_task(cls, crontab, func, args=(), kwargs={}, **_kwargs):
     )
 
 
-def chain(func, args, kwargs, parent=None, previous=None, **task_args):
+def chain(func, args, kwargs, parent=None, previous=None, submit=True,
+          **task_args):
     """Run a task after an existing task.
 
     The result is passed as the first argument to the chained task.
@@ -403,11 +423,16 @@ def chain(func, args, kwargs, parent=None, previous=None, **task_args):
         parent = previous.parent
     task = Task.objects.create(signature=sig, parent=parent, previous=previous,
                                **task_args)
+    if parent is not None and submit:
+        with cache.lock(str(parent.id), timeout=2):
+            parent.refresh_from_db()
+            if parent.status == Task.STATUS_SUCCESS:
+                task.submit(parent.result())
     return task
 
 
 def delay(func, args, kwargs, parent=None, submit=True, **task_args):
-    task = chain(func, args, kwargs, parent, **task_args)
+    task = chain(func, args, kwargs, parent, submit=False, **task_args)
     if submit:
         task.submit()
     return task
