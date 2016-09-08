@@ -174,8 +174,10 @@ class Task(models.Model):
             if self.status not in self.STATUS_DONE:
                 self.status = self.STATUS_REVOKED
                 self.save(update_fields=('status',))
-                for child in Task.objects.filter(parent=self):
-                    child.revoke()
+            for child in self.subtasks.all():
+                child.revoke()
+            for next in self.next.all():
+                next.revoke()
 
     def subtask(self, func, args=(), kwargs={}):
         """Launch a subtask.
@@ -235,7 +237,7 @@ class Task(models.Model):
         if self.parent:
             self.parent.child_succeeded(self, result)
         for next in self.next.all():
-            next.submit(result)
+            next.submit()
 
     def _store_logs(self):
         key = self._get_log_key()
@@ -427,7 +429,7 @@ def chain(func, args, kwargs, parent=None, previous=None, submit=True,
         with cache.lock(str(parent.id), timeout=2):
             parent.refresh_from_db()
             if parent.status == Task.STATUS_SUCCESS:
-                task.submit(parent.result())
+                task.submit()
     return task
 
 

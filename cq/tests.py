@@ -20,7 +20,7 @@ from redis import Redis
 from croniter import croniter
 from rest_framework.test import APITransactionTestCase, APIRequestFactory, force_authenticate
 
-from .models import Task, RepeatingTask
+from .models import Task, RepeatingTask, delay
 from .decorators import task
 from .consumers import run_task
 from .views import TaskViewSet
@@ -82,8 +82,8 @@ def task_i(task):
 
 
 @task('j')
-def task_j(task, a, b):
-    return a + b
+def task_j(task, a):
+    return task.previous.result + a
 
 
 def errback(task, error):
@@ -140,6 +140,39 @@ class TaskFailureTestCase(TransactionChannelTestCase):
         task = task_k.delay(error=True)
         run_task(self.get_next_message('cq-tasks', require=True))
         task.wait()
+
+
+@override_settings(CQ_SERIAL=False)
+class TaskRevokeTestCase(TransactionChannelTestCase):
+    def test_cancel_before_launch(self):
+        task = delay(task_c, (), {}, submit=False)
+        task.revoke()
+        task.submit()
+        run_task(self.get_next_message('cq-tasks', require=False))
+        run_task(self.get_next_message('cq-tasks', require=False))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_REVOKED)
+        self.assertEqual(task.subtasks.first(), None)
+
+    def test_cancel_after_submit(self):
+        task = task_c.delay()
+        task.refresh_from_db()
+        task.revoke()
+        run_task(self.get_next_message('cq-tasks', require=False))
+        run_task(self.get_next_message('cq-tasks', require=False))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_REVOKED)
+        self.assertEqual(task.subtasks.first(), None)
+
+    def test_cancel_after_run(self):
+        task = task_c.delay()
+        run_task(self.get_next_message('cq-tasks', require=False))
+        task.refresh_from_db()
+        task.revoke()
+        run_task(self.get_next_message('cq-tasks', require=False))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_REVOKED)
+        self.assertEqual(task.subtasks.first().status, task.STATUS_REVOKED)
 
 
 class DBLatencyTestCase(TestCase):
