@@ -15,7 +15,7 @@ from channels import Channel
 from asgi_redis import RedisChannelLayer
 from croniter import croniter
 
-from .task import from_signature, to_signature, to_func_name
+from .task import from_signature, to_signature, to_func_name, TaskFunc
 from .managers import TaskManager
 from .utils import import_attribute
 
@@ -166,7 +166,11 @@ class Task(models.Model):
         func, args, kwargs = from_signature(self.signature)
         if result is not None:
             args = (result,) + tuple(args)
-        with transaction.atomic():
+        task_func = TaskFunc.get_task(self.signature['func_name'])
+        if task_func.atomic:
+            with transaction.atomic():
+                return func(*args, task=self, **kwargs)
+        else:
             return func(*args, task=self, **kwargs)
 
     def revoke(self):

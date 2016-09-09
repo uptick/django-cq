@@ -34,8 +34,9 @@ class TaskFunc(object):
     task_table = {}
     name_table = {}
 
-    def __init__(self, name=None):
+    def __init__(self, name=None, atomic=True):
         self.name = name
+        self.atomic = atomic
 
     def __call__(self, func):
         @wraps(func)

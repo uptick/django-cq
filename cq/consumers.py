@@ -3,7 +3,7 @@ import logging
 from django.db import transaction
 
 from .models import Task, delay
-from .task import SerialTask
+from .task import SerialTask, TaskFunc
 from .backends import backend
 
 
@@ -17,26 +17,35 @@ def run_task(message):
         logger.error('Invalid CQ message.')
         return
     task = Task.objects.get(id=task_id)
+    func_name = task.signature['func_name']
     if task.status == Task.STATUS_REVOKED:
-        logger.info('Not running revoked task: {}'.format(task.signature['func_name']))
+        logger.info('Not running revoked task: {}'.format(func_name))
         return
-    logger.info('Running task: {}'.format(task.signature['func_name']))
+    logger.info('Running task: {}'.format(func_name))
     backend.set_current_task(task_id)
     task.pre_start()
-    with transaction.atomic():
-        try:
-            result = task.start(pre_start=False)
-        except Exception as err:
-            task.failure(err)
+    taskFunc = TaskFunc.get_task(func_name)
+    if taskFunc.atomic:
+        with transaction.atomic():
+            _do_run_task(task)
+    else:
+        _do_run_task(task)
+
+
+def _do_run_task(task):
+    try:
+        result = task.start(pre_start=False)
+    except Exception as err:
+        task.failure(err)
+    else:
+        if isinstance(result, Task):
+            task.waiting(task=result)
         else:
-            if isinstance(result, Task):
-                task.waiting(task=result)
+            if isinstance(result, SerialTask):
+                result = result.result
+            if task.subtasks.exists():
+                task.waiting(result=result)
             else:
-                if isinstance(result, SerialTask):
-                    result = result.result
-                if task.subtasks.exists():
-                    task.waiting(result=result)
-                else:
-                    task.success(result)
-        finally:
-            backend.set_current_task()
+                task.success(result)
+    finally:
+        backend.set_current_task()

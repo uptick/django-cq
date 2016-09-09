@@ -1,3 +1,4 @@
+import uuid
 from unittest.mock import patch
 from unittest import skip
 from datetime import datetime
@@ -93,6 +94,19 @@ def errback(task, error):
 @task('k')
 def task_k(task, error=False):
     task.errorback(errback)
+    if error:
+        raise Exception
+
+
+@task(atomic=False)
+def task_l(task, uuid, error=False):
+    Task.objects.create(id=uuid)
+    if error:
+        raise Exception
+
+@task
+def task_m(task, uuid, error=False):
+    Task.objects.create(id=uuid)
     if error:
         raise Exception
 
@@ -264,6 +278,41 @@ class AsyncChainedTaskTestCase(TransactionChannelTestCase):
         self.assertEqual(task.result, 5)
 
 
+@override_settings(CQ_SERIAL=False)
+class AtomicTaskTestCase(TransactionChannelTestCase):
+    def test_non_atomic_success(self):
+        uid = uuid.uuid4()
+        task = task_l.delay(str(uid), error=False)
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_SUCCESS)
+        self.assertEqual(Task.objects.filter(id=str(uid)).exists(), True)
+
+    def test_non_atomic_failure(self):
+        uid = uuid.uuid4()
+        task = task_l.delay(str(uid), error=True)
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_FAILURE)
+        self.assertEqual(Task.objects.filter(id=str(uid)).exists(), True)
+
+    def test_atomic_success(self):
+        uid = uuid.uuid4()
+        task = task_m.delay(str(uid), error=False)
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_SUCCESS)
+        self.assertEqual(Task.objects.filter(id=str(uid)).exists(), True)
+
+    def test_atomic_failure(self):
+        uid = uuid.uuid4()
+        task = task_m.delay(str(uid), error=True)
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_FAILURE)
+        self.assertEqual(Task.objects.filter(id=str(uid)).exists(), False)
+
+
 class GetQueuedTasksTestCase(TestCase):
     def test_returns_empty(self):
         task_ids = backend.get_queued_tasks()
@@ -349,8 +398,8 @@ class ViewTestCase(ChannelTestCaseMixin, APITransactionTestCase):
 
         # Check task creation.
         data = {
-            'task': 'j',
-            'args': [2, 3]
+            'task': 'k',
+            'args': [False]
         }
         self.client.force_authenticate(self.user)
         response = self.client.post(reverse('cqtask-list'), data, format='json')
