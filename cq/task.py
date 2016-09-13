@@ -73,7 +73,7 @@ class TaskFunc(object):
         direct = task is None
         serial = isinstance(task, SerialTask)
         if direct or serial:
-            task = SerialTask()
+            task = SerialTask(parent=task, previous=task)
         try:
             result = func(task, *args, **kwargs)
         except Exception as err:
@@ -116,9 +116,11 @@ class TaskFunc(object):
 class SerialTask(object):
     """
     """
-    def __init__(self, result=None):
+    def __init__(self, result=None, parent=None, previous=None):
         self.id = uuid.uuid4()
         self.result = result
+        self.parent = parent
+        self.previous = previous
         self._errbacks = []
 
     def subtask(self, func, args=(), kwargs={}):
@@ -126,11 +128,8 @@ class SerialTask(object):
         return func(*args, task=self, **kwargs)
 
     def chain(self, func, args=(), kwargs={}):
-        all_args = args
-        if self.result is not None:
-            all_args = (self.result,) + args
         # Note: A serial task will automatically be created.
-        return func(*all_args, task=self, **kwargs)
+        return func(*args, task=self, **kwargs)
 
     def errorback(self, func, args=(), kwargs={}):
         self._errbacks.append((func, args, kwargs))
