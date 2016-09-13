@@ -97,6 +97,8 @@ class Task(models.Model):
         self.finished = None
         self.details = {}
         self.at_risk = self.AT_RISK_NONE
+        self.save(update_fields=('status', 'started', 'finished',
+                                 'details', 'at_risk'))
         self.submit()
 
     def submit(self, *pre_args):
