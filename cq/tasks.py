@@ -1,3 +1,5 @@
+import logging
+
 from django.utils import timezone
 from django.core.cache import cache
 from django.core.management import call_command
@@ -35,9 +37,9 @@ def retry_tasks(cqtask, *args):
 @task
 def check_lost(cqtask, *args):
     running_task_ids = backend.get_running_tasks()
-    cqtask.log('Running tasks: {}'.format(running_task_ids))
+    cqtask.log('Running tasks: {}'.format(running_task_ids), logging.DEBUG)
     queued_task_ids = backend.get_queued_tasks()
-    cqtask.log('Queued tasks: {}'.format(queued_task_ids))
+    cqtask.log('Queued tasks: {}'.format(queued_task_ids), logging.DEBUG)
     queued_tasks = Task.objects.filter(status=Task.STATUS_QUEUED)
     running_tasks = Task.objects.filter(status=Task.STATUS_RUNNING)
     for task in queued_tasks:
@@ -64,9 +66,9 @@ def check_lost(cqtask, *args):
 
 @task
 def maintenance(task):
-    retry_tasks()
-    check_lost()
-    clean_up()
+    retry_tasks(task=task)
+    check_lost(task=task)
+    clean_up(task=task)
 
 
 @task

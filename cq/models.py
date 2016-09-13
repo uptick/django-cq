@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from datetime import timedelta
 import uuid
+from traceback import format_tb
 import logging
 
 from django.db import models, transaction
@@ -271,6 +272,10 @@ class Task(models.Model):
             self.status = self.STATUS_FAILURE
         self.details['error'] = str(err)
         self.details['exception'] = err.__class__.__name__
+        try:
+            self.details['traceback'] = format_tb(err.__traceback__)
+        except:
+            pass
         self.finished = timezone.now()
         self._store_logs()
         self.save(update_fields=('status', 'details', 'finished'))
@@ -280,15 +285,15 @@ class Task(models.Model):
             func, args, kwargs = from_signature(eb)
             func(*((self, err,) + tuple(args)), **kwargs)
 
-    def log(self, msg, origin=None):
+    def log(self, msg, level=logging.INFO, origin=None):
         """Log to the task, and to the system logger.
 
         Will push the logged message to the topmost task.
         """
         if self.parent:
-            self.parent.log(msg, origin or self)
+            self.parent.log(msg, level, origin or self)
         else:
-            logger.info(msg)
+            logger.log(level, msg)
             data = {
                 'message': msg,
                 'timestamp': str(timezone.now())

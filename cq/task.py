@@ -135,8 +135,8 @@ class SerialTask(object):
     def errorback(self, func, args=(), kwargs={}):
         self._errbacks.append((func, args, kwargs))
 
-    def log(self, msg):
-        logger.info(msg)
+    def log(self, msg, level=logging.INFO, origin=None):
+        logger.log(level, msg)
 
 
 class FuncNameWidget(forms.TextInput):
