@@ -47,7 +47,7 @@ def check_lost(cqtask, *args):
             with cache.lock(str(task.id), timeout=2):
                 if task.at_risk == Task.AT_RISK_QUEUED:
                     cqtask.log('Lost in queue: {}'.format(task.id))
-                    task.status = Task.STATUS_RETRY
+                    task.status = Task.STATUS_LOST
                     task.save(update_fields=['status'])
                 else:
                     task.at_risk = Task.AT_RISK_QUEUED
