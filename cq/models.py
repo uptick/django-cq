@@ -264,18 +264,29 @@ class Task(models.Model):
     def failure(self, err):
         """To be run from workers.
         """
-        if self.status == self.STATUS_WAITING:
-            logger.info('Task incomplete: {}'.format(self.func_name))
-            self.status = self.STATUS_INCOMPLETE
-        else:
-            logger.info('Task failed: {}'.format(self.func_name))
-            self.status = self.STATUS_FAILURE
+
+        # Set the error details.
         self.details['error'] = str(err)
         self.details['exception'] = err.__class__.__name__
         try:
-            self.details['traceback'] = format_tb(err.__traceback__)
+            self.details['traceback'] = ''.join(format_tb(err.__traceback__))
         except:
             pass
+
+        # Set the status and start formatting the output message.
+        if self.status == self.STATUS_WAITING:
+            msg = 'Task incomplete: {}'.format(self.func_name)
+            self.status = self.STATUS_INCOMPLETE
+        else:
+            msg = 'Task failed: {}'.format(self.func_name)
+            self.status = self.STATUS_FAILURE
+
+        # Finish the message.
+        msg += '\nError: {}'.format(self.details['error'])
+        if 'traceback' in self.details:
+            msg += '\nTraceback:\n{}'.format(self.details['traceback'])
+        logger.error(msg)
+
         self.finished = timezone.now()
         self._store_logs()
         self.save(update_fields=('status', 'details', 'finished'))
