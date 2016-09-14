@@ -79,7 +79,11 @@ def call_command_task(task, *args, **kwargs):
 
 
 @task
-def memory_details(task):
-    from pympler import muppy, summary
-    all_objs = muppy.get_objects()
-    summary.print_(summary.summarize(all_objs))
+def memory_details(task, method='mem_top'):
+    if method == 'pympler':
+        from pympler import muppy, summary
+        all_objs = muppy.get_objects()
+        summary.print_(summary.summarize(all_objs))
+    else:
+        from mem_top import mem_top
+        task.log(mem_top())
