@@ -76,3 +76,10 @@ def call_command_task(task, *args, **kwargs):
     """A wrapper to call management commands.
     """
     return call_command(*args, **kwargs)
+
+
+@task
+def memory_details(task):
+    from pympler import muppy, summary
+    all_objs = muppy.get_objects()
+    summary.print_(summary.summarize(all_objs))
