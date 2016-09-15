@@ -79,11 +79,19 @@ def call_command_task(task, *args, **kwargs):
 
 
 @task
-def memory_details(task, method='mem_top'):
+def memory_details(task, method=None):
     if method == 'pympler':
         from pympler import muppy, summary
         all_objs = muppy.get_objects()
         summary.print_(summary.summarize(all_objs))
-    else:
+    elif method == 'mem_top':
         from mem_top import mem_top
         task.log(mem_top())
+    else:
+        import subprocess
+        import shlex
+        result = subprocess.check_output(
+            'ps --no-headers -eo pmem,vsize,pid,cmd | sort -k 1 -nr',
+            shell=True
+        )
+        task.log('\n' + result.decode('utf8'))
