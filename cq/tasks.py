@@ -91,7 +91,7 @@ def memory_details(task, method=None):
         import subprocess
         import shlex
         result = subprocess.check_output(
-            'ps --no-headers -eo pmem,vsize,pid,cmd | sort -k 1 -nr',
+            'ps --no-headers -eo pmem,vsize,rss,pid,cmd | sort -k 1 -nr',
             shell=True
         )
         task.log('\n' + result.decode('utf8'))
