@@ -15,7 +15,7 @@ the Channels machinery.
 There are two reasons:
 
  1. Aiming for more fault tolerant tasks. There are many occasions where information
-    regarding how tests are progressing is needed to be stored persistantly. For
+    regarding how tests are progressing is needed to be stored persistently. For
     important tasks, this should be stored even in the case of a Redis fault, or if
     the worker goes down.
 
