@@ -82,6 +82,8 @@ class Task(models.Model):
     result_expiry = models.DateTimeField(null=True, blank=True)
     at_risk = models.CharField(max_length=1, choices=AT_RISK_CHOICES,
                                default=AT_RISK_NONE)
+    retries = models.PositiveIntegerField(default=0)
+    last_retry = models.DateTimeField(null=True, blank=True)
 
     objects = TaskManager()
 
@@ -97,8 +99,11 @@ class Task(models.Model):
         self.finished = None
         self.details = {}
         self.at_risk = self.AT_RISK_NONE
+        self.retries += 1
+        self.last_retry = timezone.now()
         self.save(update_fields=('status', 'started', 'finished',
-                                 'details', 'at_risk'))
+                                 'details', 'at_risk', 'retries',
+                                 'last_retry'))
         self.submit()
 
     def submit(self, *pre_args):
@@ -263,7 +268,7 @@ class Task(models.Model):
             logger.info('All children succeeded: {}'.format(self.func_name))
             self.success()
 
-    def failure(self, err):
+    def failure(self, err, retry=False):
         """To be run from workers.
         """
 
@@ -289,14 +294,18 @@ class Task(models.Model):
             msg += '\nTraceback:\n{}'.format(self.details['traceback'])
         logger.error(msg)
 
+        if retry:
+            self.status = self.STATUS_RETRY
         self.finished = timezone.now()
         self._store_logs()
         self.save(update_fields=('status', 'details', 'finished'))
-        if self.parent:
-            self.parent.failure(err)
-        for eb in self.details.get('errbacks', []):
-            func, args, kwargs = from_signature(eb)
-            func(*((self, err,) + tuple(args)), **kwargs)
+
+        if not retry:
+            if self.parent:
+                self.parent.failure(err)
+            for eb in self.details.get('errbacks', []):
+                func, args, kwargs = from_signature(eb)
+                func(*((self, err,) + tuple(args)), **kwargs)
 
     def log(self, msg, level=logging.INFO, origin=None):
         """Log to the task, and to the system logger.

@@ -1,3 +1,4 @@
+from datetime import timedelta
 import logging
 
 from django.utils import timezone
@@ -27,11 +28,19 @@ def clean_up(task, *args):
 
 
 @task
-def retry_tasks(cqtask, *args):
-    retry = Task.objects.filter(status=Task.STATUS_RETRY)[:20]  # Cap at 20
+def retry_tasks(cqtask, *args, **kwargs):
+    retry_delay = kwargs.pop('retry_delay', 1)
+    retry = Task.objects.filter(status=Task.STATUS_RETRY)
+    launched = 0
     for task in retry:
-        cqtask.log('Retrying: {}'.format(task.id))
-        task.retry()
+        next_retry = (task.retries ** 2) * timedelta(minutes=retry_delay)
+        now = timezone.now()
+        if not task.last_retry or (now - task.last_retry) >= next_retry:
+            cqtask.log('Retrying: {}'.format(task.id))
+            task.retry()
+            launched += 1
+            if launched >= 20:  # cap at 20
+                break
 
 
 @task

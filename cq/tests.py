@@ -5,27 +5,24 @@ from datetime import datetime
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
-from django.conf import settings
 try:
     from django.urls import reverse
 except ImportError:
     from django.core.urlresolvers import reverse
 from django.contrib.auth import get_user_model
 from channels.tests import (
-    TransactionChannelTestCase, ChannelTestCase
+    TransactionChannelTestCase
 )
 from channels.tests.base import ChannelTestCaseMixin
 from channels import Channel
-from channels.asgi import channel_layers
-from redis import Redis
 from croniter import croniter
-from rest_framework.test import APITransactionTestCase, APIRequestFactory, force_authenticate
+from rest_framework.test import APITransactionTestCase
 
 from .models import Task, RepeatingTask, delay
 from .decorators import task
 from .consumers import run_task
-from .views import TaskViewSet
 from .backends import backend
+from .tasks import retry_tasks
 
 
 User = get_user_model()
@@ -111,6 +108,26 @@ def task_m(task, uuid, error=False):
         raise Exception
 
 
+def check_retry(err):
+    if 'hello' in str(err):
+        return True
+    return False
+
+
+class Retry(Exception):
+    pass
+
+
+@task(retries=3, retry_exceptions=[Retry, check_retry])
+def task_n(task, error=None):
+    if error == 'exception':
+        raise Retry
+    elif error == 'func':
+        raise Exception('hello')
+    elif error == 'fail':
+        raise Exception('nope')
+
+
 @override_settings(CQ_SERIAL=False)
 class DecoratorTestCase(TransactionChannelTestCase):
     def test_adds_delay_function(self):
@@ -154,6 +171,62 @@ class TaskFailureTestCase(TransactionChannelTestCase):
         task = task_k.delay(error=True)
         run_task(self.get_next_message('cq-tasks', require=True))
         task.wait()
+
+    def test_retry_fail(self):
+        task = task_n.delay(error='fail')
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_FAILURE)
+        self.assertEqual(task.retries, 0)
+
+    def test_retry_success(self):
+        task = task_n.delay()
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_SUCCESS)
+        self.assertEqual(task.retries, 0)
+
+    def test_retry_exception(self):
+        task = task_n.delay(error='exception')
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.refresh_from_db()
+        self.assertEqual(task.status, task.STATUS_RETRY)
+        retry_tasks(retry_delay=0)
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.refresh_from_db()
+        self.assertEqual(task.status, task.STATUS_RETRY)
+        self.assertEqual(task.retries, 1)
+        retry_tasks(retry_delay=0)
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.refresh_from_db()
+        self.assertEqual(task.status, task.STATUS_RETRY)
+        self.assertEqual(task.retries, 2)
+        retry_tasks(retry_delay=0)
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.refresh_from_db()
+        self.assertEqual(task.status, task.STATUS_FAILURE)
+        self.assertEqual(task.retries, 3)
+
+    def test_retry_func(self):
+        task = task_n.delay(error='func')
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.refresh_from_db()
+        self.assertEqual(task.status, task.STATUS_RETRY)
+        retry_tasks(retry_delay=0)
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.refresh_from_db()
+        self.assertEqual(task.status, task.STATUS_RETRY)
+        self.assertEqual(task.retries, 1)
+        retry_tasks(retry_delay=0)
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.refresh_from_db()
+        self.assertEqual(task.status, task.STATUS_RETRY)
+        self.assertEqual(task.retries, 2)
+        retry_tasks(retry_delay=0)
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.refresh_from_db()
+        self.assertEqual(task.status, task.STATUS_FAILURE)
+        self.assertEqual(task.retries, 3)
 
 
 @override_settings(CQ_SERIAL=False)

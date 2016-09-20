@@ -2,7 +2,7 @@ import logging
 
 from django.db import transaction
 
-from .models import Task, delay
+from .models import Task
 from .task import SerialTask, TaskFunc
 from .backends import backend
 
@@ -24,19 +24,19 @@ def run_task(message):
     logger.info('Running task: {}'.format(func_name))
     backend.set_current_task(task_id)
     task.pre_start()
-    taskFunc = TaskFunc.get_task(func_name)
-    if taskFunc.atomic:
+    task_func = TaskFunc.get_task(func_name)
+    if task_func.atomic:
         with transaction.atomic():
-            _do_run_task(task)
+            _do_run_task(task_func, task)
     else:
-        _do_run_task(task)
+        _do_run_task(task_func, task)
 
 
-def _do_run_task(task):
+def _do_run_task(task_func, task):
     try:
         result = task.start(pre_start=False)
     except Exception as err:
-        task.failure(err)
+        handle_failure(task_func, task, err)
     else:
         if isinstance(result, Task):
             task.waiting(task=result)
@@ -49,3 +49,12 @@ def _do_run_task(task):
                 task.success(result)
     finally:
         backend.set_current_task()
+
+
+def handle_failure(task_func, task, err):
+    """Decide whether to retry a failed task.
+    """
+    if task.retries >= task_func.retries or not task_func.match_exceptions(err):
+        task.failure(err)
+    else:
+        task.failure(err, retry=True)

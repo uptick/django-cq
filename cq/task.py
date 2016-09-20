@@ -1,3 +1,4 @@
+import inspect
 from functools import wraps
 import uuid
 import logging
@@ -34,9 +35,13 @@ class TaskFunc(object):
     task_table = {}
     name_table = {}
 
-    def __init__(self, name=None, atomic=True):
+    def __init__(self, name=None, atomic=True, **kwargs):
         self.name = name
         self.atomic = atomic
+        self.retries = kwargs.get('retries', 0)
+        self.retry_exceptions = kwargs.get('retry_exceptions', [])
+        if not isinstance(self.retry_exceptions, (list, tuple)):
+            self.retry_exceptions = [self.retry_exceptions]
 
     def __call__(self, func):
         @wraps(func)
@@ -111,6 +116,26 @@ class TaskFunc(object):
         except KeyError:
             return func_name
         return task.name or func_name
+
+    def match_exceptions(self, error):
+        def _is_exception(value):
+            if not inspect.isclass(value):
+                value = value.__class__
+            return issubclass(value, Exception)
+
+        def _is_instance(value, cls):
+            if not inspect.isclass(cls):
+                cls = cls.__class__
+            return isinstance(value, cls)
+
+        if not self.retry_exceptions:
+            return True
+        for ex in self.retry_exceptions:
+            if callable(ex) and not _is_exception(ex) and ex(error):
+                return True
+            elif _is_instance(error, ex):
+                return True
+        return False
 
 
 class SerialTask(object):
