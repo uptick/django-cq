@@ -255,6 +255,7 @@ class Task(models.Model):
         key = self._get_log_key()
         logs = json.loads(cache.get(key, '[]'))
         self.details['logs'] = logs
+        cache.delete(key)
 
     def child_succeeded(self, task, result):
         logger.info('Task child succeeded: {}'.format(self.func_name))
@@ -321,7 +322,7 @@ class Task(models.Model):
                 'timestamp': str(timezone.now())
             }
             if origin:
-                data['origin'] = origin.id
+                data['origin'] = str(origin.id)
             key = self._get_log_key()
             logs = json.loads(cache.get(key, '[]'))
             logs.append(data)
