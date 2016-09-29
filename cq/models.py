@@ -165,8 +165,6 @@ class Task(models.Model):
         self.status = self.STATUS_RUNNING
         self.started = timezone.now()
         self.save(update_fields=('status', 'started'))
-
-        # Clear out the task logs.
         self._task_logs = []
 
     def start(self, result=None, pre_start=True):
@@ -257,7 +255,10 @@ class Task(models.Model):
     def _store_logs(self):
         key = self._get_log_key()
         # logs = json.loads(cache.get(key, '[]'))
-        self.details['logs'] = self._task_logs
+        try:
+            self.details['logs'] = self._task_logs
+        except AttributeError:
+            pass
         cache.delete(key)
 
     def child_succeeded(self, task, result):
