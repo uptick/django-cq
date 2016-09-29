@@ -166,6 +166,9 @@ class Task(models.Model):
         self.started = timezone.now()
         self.save(update_fields=('status', 'started'))
 
+        # Clear out the task logs.
+        self._task_logs = []
+
     def start(self, result=None, pre_start=True):
         """To be run from workers.
         """
@@ -253,8 +256,8 @@ class Task(models.Model):
 
     def _store_logs(self):
         key = self._get_log_key()
-        logs = json.loads(cache.get(key, '[]'))
-        self.details['logs'] = logs
+        # logs = json.loads(cache.get(key, '[]'))
+        self.details['logs'] = self._task_logs
         cache.delete(key)
 
     def child_succeeded(self, task, result):
@@ -308,7 +311,8 @@ class Task(models.Model):
                 func, args, kwargs = from_signature(eb)
                 func(*((self, err,) + tuple(args)), **kwargs)
 
-    def log(self, msg, level=logging.INFO, origin=None):
+    def log(self, msg, level=logging.INFO, origin=None, publish=True,
+            limit=40):
         """Log to the task, and to the system logger.
 
         Will push the logged message to the topmost task.
@@ -323,10 +327,14 @@ class Task(models.Model):
             }
             if origin:
                 data['origin'] = str(origin.id)
-            key = self._get_log_key()
-            logs = json.loads(cache.get(key, '[]'))
-            logs.append(data)
-            cache.set(key, json.dumps(logs))
+            self._task_logs.append(data)
+
+            # Don't try to set too much in the cache, it can cause
+            # problems. Instead, cap it at the past `limit` logs. Also, use
+            # `publish` to control when publishing happens.
+            if publish:
+                key = self._get_log_key()
+                cache.set(key, json.dumps(self._task_logs[-limit:]))
 
     @property
     def result(self):
