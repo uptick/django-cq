@@ -159,7 +159,7 @@ class SerialTask(object):
     def errorback(self, func, args=(), kwargs={}):
         self._errbacks.append((func, args, kwargs))
 
-    def log(self, msg, level=logging.INFO, origin=None):
+    def log(self, msg, level=logging.INFO, **kwargs):
         logger.log(level, msg)
 
 
