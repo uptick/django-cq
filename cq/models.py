@@ -257,11 +257,11 @@ class Task(models.Model):
 
     def _store_logs(self):
         key = self._get_log_key()
-        # logs = json.loads(cache.get(key, '[]'))
         try:
-            self.details['logs'] = self._task_logs
+            logs = self._task_logs
         except AttributeError:
-            pass
+            logs = []
+        self.details['logs'] = logs
         cache.delete(key)
 
     def child_succeeded(self, task, result):
@@ -331,7 +331,10 @@ class Task(models.Model):
             }
             if origin:
                 data['origin'] = str(origin.id)
-            self._task_logs.append(data)
+            try:
+                self._task_logs.append(data)
+            except AttributeError:
+                self._task_logs = [data]
 
             # Don't try to set too much in the cache, it can cause
             # problems. Instead, cap it at the past `limit` logs. Also, use
