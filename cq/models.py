@@ -9,10 +9,11 @@ import logging
 
 from django.db import models, transaction
 from django.contrib.postgres.fields import JSONField
+from django.conf import settings
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
-from channels import Channel
+from channels import Channel, DEFAULT_CHANNEL_LAYER
 from asgi_redis import RedisChannelLayer
 from croniter import croniter
 
@@ -138,8 +139,10 @@ class Task(models.Model):
                 transaction.on_commit(lambda: self.send())
 
     def send(self):
+        layer = getattr(settings, 'CQ_CHANNEL_LAYER', DEFAULT_CHANNEL_LAYER)
+        logger.debug('Sending CQ message on "{}" layer.'.format(layer))
         try:
-            Channel('cq-tasks').send({
+            Channel('cq-tasks', alias=layer).send({
                 'task_id': str(self.id)
             })
         except RedisChannelLayer.ChannelFull:
