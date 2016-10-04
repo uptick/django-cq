@@ -1,7 +1,7 @@
 import uuid
 from unittest.mock import patch
-from unittest import skip
 from datetime import datetime
+import logging
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -14,7 +14,6 @@ from channels.tests import (
     TransactionChannelTestCase
 )
 from channels.tests.base import ChannelTestCaseMixin
-from channels import Channel
 from croniter import croniter
 from rest_framework.test import APITransactionTestCase
 
@@ -26,6 +25,16 @@ from .tasks import retry_tasks
 
 
 User = get_user_model()
+
+
+class SilentMixin(object):
+    def setUp(self):
+        super().setUp()
+        logging.disable(logging.CRITICAL)
+
+    def tearDown(self):
+        super().tearDown()
+        logging.disable(logging.NOTSET)
 
 
 @task('a')
@@ -47,7 +56,7 @@ def task_c(task):
 
 @task
 def task_d(task):
-    sub = task.subtask(task_a)
+    task.subtask(task_a)
     return 'd'
 
 
@@ -101,6 +110,7 @@ def task_l(task, uuid, error=False):
     if error:
         raise Exception
 
+
 @task
 def task_m(task, uuid, error=False):
     Task.objects.create(id=uuid)
@@ -128,8 +138,8 @@ def task_n(task, error=None):
         raise Exception('nope')
 
 
-@override_settings(CQ_SERIAL=False)
-class DecoratorTestCase(TransactionChannelTestCase):
+@override_settings(CQ_SERIAL=False, CQ_CHANNEL_LAYER='default')
+class DecoratorTestCase(SilentMixin, TransactionChannelTestCase):
     def test_adds_delay_function(self):
         self.assertTrue(hasattr(task_a, 'delay'))
         self.assertIsNot(task_a.delay, None)
@@ -149,8 +159,8 @@ class DecoratorTestCase(TransactionChannelTestCase):
         self.assertLess(task.submitted, after)
 
 
-@override_settings(CQ_SERIAL=False)
-class TaskSuccessTestCase(TransactionChannelTestCase):
+@override_settings(CQ_SERIAL=False, CQ_CHANNEL_LAYER='default')
+class TaskSuccessTestCase(SilentMixin, TransactionChannelTestCase):
     def test_something(self):
         task = task_a.delay()
         run_task(self.get_next_message('cq-tasks', require=True))
@@ -158,8 +168,8 @@ class TaskSuccessTestCase(TransactionChannelTestCase):
         self.assertEqual(task.status, task.STATUS_SUCCESS)
 
 
-@override_settings(CQ_SERIAL=False)
-class TaskFailureTestCase(TransactionChannelTestCase):
+@override_settings(CQ_SERIAL=False, CQ_CHANNEL_LAYER='default')
+class TaskFailureTestCase(SilentMixin, TransactionChannelTestCase):
     def test_something(self):
         task = task_b.delay()
         run_task(self.get_next_message('cq-tasks', require=True))
@@ -229,8 +239,8 @@ class TaskFailureTestCase(TransactionChannelTestCase):
         self.assertEqual(task.retries, 3)
 
 
-@override_settings(CQ_SERIAL=False)
-class TaskRevokeTestCase(TransactionChannelTestCase):
+@override_settings(CQ_SERIAL=False, CQ_CHANNEL_LAYER='default')
+class TaskRevokeTestCase(SilentMixin, TransactionChannelTestCase):
     def test_cancel_before_launch(self):
         task = delay(task_c, (), {}, submit=False)
         task.revoke()
@@ -262,12 +272,8 @@ class TaskRevokeTestCase(TransactionChannelTestCase):
         self.assertEqual(task.subtasks.first().status, task.STATUS_REVOKED)
 
 
-class DBLatencyTestCase(TestCase):
-    pass
-
-
-@override_settings(CQ_SERIAL=False)
-class AsyncSubtaskTestCase(TransactionChannelTestCase):
+@override_settings(CQ_SERIAL=False, CQ_CHANNEL_LAYER='default')
+class AsyncSubtaskTestCase(SilentMixin, TransactionChannelTestCase):
     def test_returns_own_result(self):
         task = task_d.delay()
         run_task(self.get_next_message('cq-tasks', require=True))
@@ -325,7 +331,7 @@ class AsyncSubtaskTestCase(TransactionChannelTestCase):
         self.assertIsNot(task.error, None)
 
 
-class SerialSubtaskTestCase(TransactionChannelTestCase):
+class SerialSubtaskTestCase(SilentMixin, TransactionChannelTestCase):
     def test_returns_own_result(self):
         result = task_d()
         self.assertEqual(result, 'd')
@@ -339,8 +345,8 @@ class SerialSubtaskTestCase(TransactionChannelTestCase):
         self.assertEqual(result, 'a')
 
 
-@override_settings(CQ_SERIAL=False)
-class AsyncChainedTaskTestCase(TransactionChannelTestCase):
+@override_settings(CQ_SERIAL=False, CQ_CHANNEL_LAYER='default')
+class AsyncChainedTaskTestCase(SilentMixin, TransactionChannelTestCase):
     def test_all(self):
         task = task_h.delay()
         run_task(self.get_next_message('cq-tasks', require=True))
@@ -351,8 +357,8 @@ class AsyncChainedTaskTestCase(TransactionChannelTestCase):
         self.assertEqual(task.result, 5)
 
 
-@override_settings(CQ_SERIAL=False)
-class AtomicTaskTestCase(TransactionChannelTestCase):
+@override_settings(CQ_SERIAL=False, CQ_CHANNEL_LAYER='default')
+class AtomicTaskTestCase(SilentMixin, TransactionChannelTestCase):
     def test_non_atomic_success(self):
         uid = uuid.uuid4()
         task = task_l.delay(str(uid), error=False)
@@ -386,25 +392,25 @@ class AtomicTaskTestCase(TransactionChannelTestCase):
         self.assertEqual(Task.objects.filter(id=str(uid)).exists(), False)
 
 
-class GetQueuedTasksTestCase(TestCase):
-    def test_returns_empty(self):
-        task_ids = backend.get_queued_tasks()
-        self.assertEqual(task_ids, {})
+# class GetQueuedTasksTestCase(SilentMixin, TestCase):
+#     def test_returns_empty(self):
+#         task_ids = backend.get_queued_tasks()
+#         self.assertEqual(task_ids, {})
 
-    @skip('Need worker disabled.')
-    def test_queued(self):
-        chan = Channel('cq-tasks')
-        chan.send({'task_id': 'one'})
-        chan.send({'task_id': 'two'})
-        task_ids = get_queued_tasks()
-        self.assertEqual(task_ids, {'one', 'two'})
-        cl = chan.channel_layer
-        while len(task_ids):
-            msg = cl.receive_many(['cq-tasks'], block=True)
-            task_ids.remove(msg[1]['task_id'])
+#     @skip('Need worker disabled.')
+#     def test_queued(self):
+#         chan = Channel('cq-tasks')
+#         chan.send({'task_id': 'one'})
+#         chan.send({'task_id': 'two'})
+#         task_ids = get_queued_tasks()
+#         self.assertEqual(task_ids, {'one', 'two'})
+#         cl = chan.channel_layer
+#         while len(task_ids):
+#             msg = cl.receive_many(['cq-tasks'], block=True)
+#             task_ids.remove(msg[1]['task_id'])
 
 
-# class GetRunningTasksTestCase(TestCase):
+# class GetRunningTasksTestCase(SilentMixin, TestCase):
 #     def test_empty_list(self):
 #         task_ids = get_running_tasks()
 #         self.assertEqual(task_ids, set())
@@ -419,7 +425,7 @@ class GetQueuedTasksTestCase(TestCase):
 #         self.assertEqual(task_ids, set())
 
 
-class PublishCurrentTestCase(TestCase):
+class PublishCurrentTestCase(SilentMixin, TestCase):
     def test_publish(self):
         backend.clear_current()
         backend.set_current_task('hello')
@@ -432,14 +438,16 @@ class PublishCurrentTestCase(TestCase):
         self.assertEqual(task_ids, set())
 
 
-class CreateRepeatingTaskTestCase(TestCase):
+@override_settings(CQ_SERIAL=False, CQ_CHANNEL_LAYER='default')
+class CreateRepeatingTaskTestCase(SilentMixin, TestCase):
     def test_create(self):
         rt = RepeatingTask.objects.create(func_name='cq.tests.task_a')
         next = croniter(rt.crontab, timezone.now()).get_next(datetime)
         self.assertEqual(rt.next_run, next)
 
 
-class RunRepeatingTaskTestCase(TransactionChannelTestCase):
+@override_settings(CQ_SERIAL=False, CQ_CHANNEL_LAYER='default')
+class RunRepeatingTaskTestCase(SilentMixin, TransactionChannelTestCase):
     def test_run(self):
         rt = RepeatingTask.objects.create(func_name='cq.tests.task_a')
         task = rt.submit()
@@ -450,7 +458,7 @@ class RunRepeatingTaskTestCase(TransactionChannelTestCase):
         self.assertEqual(task.result, 'a')
 
 
-class ViewTestCase(ChannelTestCaseMixin, APITransactionTestCase):
+class ViewTestCase(SilentMixin, ChannelTestCaseMixin, APITransactionTestCase):
     def setUp(self):
         try:
             self.user = User.objects.create(
