@@ -143,8 +143,8 @@ class Task(models.Model):
         logger.debug('Sending CQ message on "{}" layer.'.format(layer))
         try:
             Channel('cq-tasks', alias=layer).send({
-                'task_id': str(self.id)
-            })
+                'task_id': str(self.id),
+            }, immediately=True)
         except RedisChannelLayer.ChannelFull:
             with cache.lock(str(self.id), timeout=2):
                 self.status = self.STATUS_RETRY

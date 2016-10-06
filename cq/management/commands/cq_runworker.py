@@ -15,8 +15,14 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        web_threads = options.get('web_threads', 0)
-        wkr_threads = options.get('worker_threads', 0)
+        try:
+            web_threads = int(options.get('web_threads', 0))
+        except TypeError:
+            web_threads = 0
+        try:
+            wkr_threads = int(options.get('worker_threads', 0))
+        except TypeError:
+            wkr_threads = 0
         if (web_threads or wkr_threads):
             options['threads'] = web_threads + wkr_threads
             if web_threads:
