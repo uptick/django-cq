@@ -85,6 +85,7 @@ class Task(models.Model):
                                default=AT_RISK_NONE)
     retries = models.PositiveIntegerField(default=0)
     last_retry = models.DateTimeField(null=True, blank=True)
+    force_chain = models.BooleanField(default=False)
 
     objects = TaskManager()
 
@@ -195,21 +196,21 @@ class Task(models.Model):
             for next in self.next.all():
                 next.revoke()
 
-    def subtask(self, func, args=(), kwargs={}):
+    def subtask(self, func, args=(), kwargs={}, **kw):
         """Launch a subtask.
 
         Subtasks are run at the same time as the current task. The current
         task will not be considered complete until the subtask finishes.
         """
-        return delay(func, args, kwargs, parent=self)
+        return delay(func, args, kwargs, parent=self, **kw)
 
-    def chain(self, func, args=(), kwargs={}):
+    def chain(self, func, args=(), kwargs={}, **kw):
         """Chain a task.
 
         Chained tasks are run after completion of the current task, and are
         passed the result of the current task.
         """
-        return chain(func, args, kwargs, previous=self)
+        return chain(func, args, kwargs, previous=self, **kw)
 
     def errorback(self, func, args=(), kwargs={}):
         self.details.setdefault('errbacks', []).append(
@@ -230,7 +231,9 @@ class Task(models.Model):
                 self.func_name, result
             ))
             self.details['result'] = result
-        self.save(update_fields=('status', 'waiting_on', 'details'))
+        with transaction.atomic():
+            self.save(update_fields=('status', 'waiting_on', 'details'))
+            transaction.on_commit(lambda: self.post_waiting())
 
     def success(self, result=None):
         """To be run from workers.
@@ -252,8 +255,23 @@ class Task(models.Model):
     def post_success(self, result):
         if self.parent:
             self.parent.child_succeeded(self, result)
+        self.launch_next()
+
+    def post_waiting(self):
+        self.launch_subtasks()
+
+    def launch_subtasks(self):
+
+        # Launch subtasks, but don't fire off any chained subtasks. Chained
+        # tasks get registered as subtasks also in order to pass logs.
+        for next in self.subtasks.all():
+            if next.previous is None:
+                next.submit()
+
+    def launch_next(self, force_chain=False):
         for next in self.next.all():
-            next.submit()
+            if not force_chain or next.force_chain:
+                next.submit()
 
     def _store_logs(self):
         key = self._get_log_key()
@@ -289,7 +307,7 @@ class Task(models.Model):
             pass
 
         # Set the status and start formatting the output message.
-        if self.status == self.STATUS_WAITING:
+        if self.status == self.STATUS_WAITING or self.status == self.STATUS_INCOMPLETE:
             msg = 'Task incomplete: {}'.format(self.func_name)
             self.status = self.STATUS_INCOMPLETE
         else:
@@ -314,6 +332,10 @@ class Task(models.Model):
             for eb in self.details.get('errbacks', []):
                 func, args, kwargs = from_signature(eb)
                 func(*((self, err,) + tuple(args)), **kwargs)
+
+            # Check if we want to force the subsequent chained
+            # items to run.
+            self.launch_next(force_chain=True)
 
     def log(self, msg, level=logging.INFO, origin=None, publish=True,
             limit=40):
@@ -472,16 +494,25 @@ def chain(func, args, kwargs, parent=None, previous=None, submit=True,
         parent = previous.parent
     task = Task.objects.create(signature=sig, parent=parent, previous=previous,
                                **task_args)
+
+    # Need to check immediately if the parent task has completed and
+    # launch the subtask if so.
     if parent is not None and submit:
         with cache.lock(str(parent.id), timeout=2):
             parent.refresh_from_db()
             if parent.status == Task.STATUS_SUCCESS:
                 task.submit()
+
+    # If we have no parent, and we want to submit then do so now. This
+    # happens for a straight-up delay.
+    elif parent is None and submit:
+        task.submit()
+
     return task
 
 
 def delay(func, args, kwargs, parent=None, submit=True, **task_args):
-    task = chain(func, args, kwargs, parent, submit=False, **task_args)
-    if submit:
-        task.submit()
+    task = chain(func, args, kwargs, parent, submit=submit, **task_args)
+    # if submit:
+    #     task.submit()
     return task
