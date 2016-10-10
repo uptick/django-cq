@@ -14,8 +14,8 @@ from .models import Task
 def clean_up(task, *args):
     """Remove stale tasks.
 
-    Removes tasks that succeeded that are a week or older. Also
-    removes any task older than a month. Runs once per day at midnight.
+    Only remove tasks that have succeeded, are older than the TTl, have
+    no dependencies that are still incomplete.
     """
     now = timezone.now()
     to_del = Task.objects.filter(

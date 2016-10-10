@@ -74,8 +74,9 @@ class Task(models.Model):
     parent = models.ForeignKey('self', blank=True, null=True,
                                related_name='subtasks')
     previous = models.ForeignKey('self', related_name='next', blank=True,
-                                 null=True)
-    waiting_on = models.ForeignKey('self', blank=True, null=True)
+                                 null=True, on_delete=models.SET_NULL)
+    waiting_on = models.ForeignKey('self', blank=True, null=True,
+                                   on_delete=models.SET_NULL)
     submitted = models.DateTimeField(auto_now_add=True)
     started = models.DateTimeField(null=True, blank=True)
     finished = models.DateTimeField(null=True, blank=True)
