@@ -19,10 +19,18 @@ from croniter import croniter
 
 from .task import from_signature, to_signature, to_func_name, TaskFunc
 from .managers import TaskManager
-from .utils import import_attribute
+from .utils import import_attribute, redis_connection
 
 
 logger = logging.getLogger('cq')
+
+
+class CQError(Exception):
+    pass
+
+
+class DuplicateSubmitError(CQError):
+    pass
 
 
 class Task(models.Model):
@@ -124,7 +132,7 @@ class Task(models.Model):
             elif self.status != self.STATUS_PENDING:
                 msg = 'Task {} cannot be submitted multiple times.'
                 msg = msg.format(self.id)
-                raise Exception(msg)
+                raise DuplicateSubmitError(msg)
             self.status = self.STATUS_QUEUED
 
             # Prepend arguments.
@@ -161,7 +169,8 @@ class Task(models.Model):
             start += timedelta(milliseconds=timeout)
         delta = timedelta(milliseconds=500)
         self.refresh_from_db()
-        while self.status not in self.STATUS_DONE and (timeout is None or start < end):
+        while (self.status not in self.STATUS_DONE and
+               (timeout is None or start < end)):
             time.sleep(0.5)
             self.refresh_from_db()
             start += delta
@@ -170,7 +179,10 @@ class Task(models.Model):
         self.status = self.STATUS_RUNNING
         self.started = timezone.now()
         self.save(update_fields=('status', 'started'))
+
+        # Ensure our logs are fresh.
         self._task_logs = []
+        cache.delete(self._get_log_key())
 
     def start(self, result=None, pre_start=True):
         """To be run from workers.
@@ -232,6 +244,10 @@ class Task(models.Model):
                 self.func_name, result
             ))
             self.details['result'] = result
+
+        # Must publish all remaining local logs to REDIS.
+        self._publish_logs()
+
         with transaction.atomic():
             self.save(update_fields=('status', 'waiting_on', 'details'))
             transaction.on_commit(lambda: self.post_waiting())
@@ -275,12 +291,22 @@ class Task(models.Model):
                 next.submit()
 
     def _store_logs(self):
+        if self.parent:
+            return
         key = self._get_log_key()
+        with redis_connection() as con:
+            try:
+                logs = con.lrange(key, 0, -1)
+                logs = [json.loads(l.decode()) for l in logs]
+            except:
+                logs = []
         try:
-            logs = self._task_logs
+            logs.extend(self._task_logs)
         except AttributeError:
-            logs = []
-        self.details['logs'] = logs
+            pass
+        if 'logs' not in self.details:
+            self.details['logs'] = []
+        self.details['logs'].extend(logs)
         cache.delete(key)
 
     def child_succeeded(self, task, result):
@@ -345,7 +371,7 @@ class Task(models.Model):
         Will push the logged message to the topmost task.
         """
         if self.parent:
-            self.parent.log(msg, level, origin or self)
+            self.parent.log(msg, level, origin or self, publish=publish)
         else:
             logger.log(level, msg)
             data = {
@@ -363,8 +389,16 @@ class Task(models.Model):
             # problems. Instead, cap it at the past `limit` logs. Also, use
             # `publish` to control when publishing happens.
             if publish:
-                key = self._get_log_key()
-                cache.set(key, json.dumps(self._task_logs[-limit:]))
+                self._publish_logs(limit)
+
+    def _publish_logs(self, limit=40):
+        key = self._get_log_key()
+        logs = [json.dumps(l) for l in self._task_logs[-limit:]]
+        if logs:
+            with redis_connection() as con:
+                con.rpush(key, *logs)
+                con.ltrim(key, 0, limit)
+        self._task_logs = []
 
     @property
     def result(self):
@@ -376,11 +410,15 @@ class Task(models.Model):
 
     @property
     def logs(self):
-        logs = cache.get(self._get_log_key(), None)
+        logs = self.details.get('logs', None)
         if logs is None:
-            logs = self.details.get('logs', [])
-        else:
-            logs = json.loads(logs)
+            with redis_connection() as con:
+                key = self._get_log_key()
+                try:
+                    logs = con.lrange(key, 0, -1)
+                except:
+                    logs = []
+            logs = [json.loads(l.decode()) for l in logs]
         return logs
 
     @property
@@ -482,7 +520,7 @@ def schedule_task(cls, crontab, func, args=(), kwargs={}, **_kwargs):
 
 
 def chain(func, args, kwargs, parent=None, previous=None, submit=True,
-          **task_args):
+          **kw):
     """Run a task after an existing task.
 
     The result is passed as the first argument to the chained task.
@@ -494,7 +532,7 @@ def chain(func, args, kwargs, parent=None, previous=None, submit=True,
     if parent is None and previous:
         parent = previous.parent
     task = Task.objects.create(signature=sig, parent=parent, previous=previous,
-                               **task_args)
+                               **kw)
 
     # Need to check immediately if the parent task has completed and
     # launch the subtask if so.
@@ -512,8 +550,8 @@ def chain(func, args, kwargs, parent=None, previous=None, submit=True,
     return task
 
 
-def delay(func, args, kwargs, parent=None, submit=True, **task_args):
-    task = chain(func, args, kwargs, parent, submit=submit, **task_args)
+def delay(func, args, kwargs, parent=None, submit=True, **kw):
+    task = chain(func, args, kwargs, parent, submit=submit, **kw)
     # if submit:
     #     task.submit()
     return task

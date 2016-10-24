@@ -17,7 +17,7 @@ from channels.tests.base import ChannelTestCaseMixin
 from croniter import croniter
 from rest_framework.test import APITransactionTestCase
 
-from ..models import Task, RepeatingTask, delay
+from ..models import Task, RepeatingTask, delay, DuplicateSubmitError
 from ..decorators import task
 from ..consumers import run_task
 from ..backends import backend
@@ -38,8 +38,11 @@ class SilentMixin(object):
 
 
 @task('a')
-def task_a(task):
-    return 'a'
+def task_a(task, *args):
+    if args:
+        return args
+    else:
+        return 'a'
 
 
 @task
@@ -496,3 +499,51 @@ class ViewTestCase(SilentMixin, ChannelTestCaseMixin, APITransactionTestCase):
         response = self.client.get(reverse('cqtask-detail', kwargs={'pk': id}), data, format='json')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'S')
+
+
+@override_settings(CQ_SERIAL=False, CQ_CHANNEL_LAYER='default')
+class SubmitExtraArgsTestCase(SilentMixin, TransactionChannelTestCase):
+    def test_prefix_argument(self):
+        task = task_a.delay_args(submit=False)
+        task.submit('hello')
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_SUCCESS)
+        self.assertEqual(task.signature['args'][0], 'hello')
+        self.assertEqual(task.result, ['hello'])
+
+    def test_prefix_many_arguments(self):
+        task = task_a.delay_args(submit=False)
+        task.submit('hello', 'world')
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_SUCCESS)
+        self.assertEqual(task.signature['args'][0], 'hello')
+        self.assertEqual(task.signature['args'][1], 'world')
+        self.assertEqual(task.result, ['hello', 'world'])
+
+    def test_prefix_arguments_with_existing(self):
+        task = task_a.delay_args(args=('world',), submit=False)
+        task.submit('hello')
+        run_task(self.get_next_message('cq-tasks', require=True))
+        task.wait()
+        self.assertEqual(task.status, task.STATUS_SUCCESS)
+        self.assertEqual(task.signature['args'][0], 'hello')
+        self.assertEqual(task.signature['args'][1], 'world')
+        self.assertEqual(task.result, ['hello', 'world'])
+
+
+@override_settings(CQ_SERIAL=False, CQ_CHANNEL_LAYER='default')
+class DuplicateSubmitTestCase(SilentMixin, TransactionChannelTestCase):
+    def test_fails_if_pending(self):
+        task = task_a.delay(submit=False)
+        with self.assertRaises(DuplicateSubmitError):
+            task.submit()
+
+    def test_skips_if_revoked(self):
+        task = task_a.delay_args(submit=False)
+        task.revoke()
+        task.submit()
+        with self.assertRaises(AssertionError):
+            run_task(self.get_next_message('cq-tasks', require=True))
+        self.assertEqual(task.status, task.STATUS_REVOKED)

@@ -45,15 +45,19 @@ class TaskFunc(object):
 
     def __call__(self, func):
         @wraps(func)
-        def _delay(*args, **kwargs):
+        def _delay_args(args=(), kwargs={}, **kw):
             if getattr(settings, 'CQ_SERIAL', False):
                 # Create a SerialTask here to make sure we end up
                 # returning the task instead of the result.
                 kwargs['task'] = SerialTask()
-                return self.wrapper(func, args, kwargs)
+                return self.wrapper(func, args, kwargs, **kw)
             else:
                 from .models import delay
-                return delay(func, args, kwargs)
+                return delay(func, args, kwargs, **kw)
+
+        @wraps(func)
+        def _delay(*args, **kwargs):
+            return _delay_args(args, kwargs)
 
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -71,6 +75,7 @@ class TaskFunc(object):
             self.name_table[self.name] = func_name
 
         wrapper.delay = _delay
+        wrapper.delay_args = _delay_args
         return wrapper
 
     def wrapper(self, func, args, kwargs):
