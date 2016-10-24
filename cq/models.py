@@ -397,7 +397,7 @@ class Task(models.Model):
         if logs:
             with redis_connection() as con:
                 con.rpush(key, *logs)
-                con.ltrim(key, 0, limit)
+                con.ltrim(key, -limit, -1)
         self._task_logs = []
 
     @property

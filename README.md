@@ -7,8 +7,6 @@ An attempt to implement a distributed task queue for use with Django channels.
 Modelled after RQ and Celery, complex task workflows are possible, all leveraging
 the Channels machinery.
 
-*This is very much pre-alpha.*
-
 
 ## Why
 
@@ -19,12 +17,32 @@ There are two reasons:
     important tasks, this should be stored even in the case of a Redis fault, or if
     the worker goes down.
 
- 2. Prefer to leverage the same machinery as channels. Why double up?
+ 2. Prefer to leverage the same machinery as channels.
+
+ 3. Would like to have a little extra functionality surrounding subtasks that didn't
+    seem to be available via Celery or RQ.
+
+
+## Limitations
+
+There are two limitations involved:
+
+  * REDIS must be used as the Django cache.
+
+  * `asgi_redis` must be used as the channel backend.
+
+There is work being done to remove these restrictions.
 
 
 ## Installation
 
-No pip package yet, as there are likely to be many changes:
+Use pip if you can:
+
+```bash
+pip install cq
+```
+
+or live on the edge:
 
 ```bash
 pip install -e https://github.com/furious-luke/django-cq.git#egg=django-cq
@@ -52,6 +70,32 @@ You'll need to migrate to include the models:
 
 ```bash
 ./manage.py migrate
+```
+
+You'll most likely want to create a new channel layer for your CQ
+tasks. The default layer has a short time-to-live on the channel messages,
+which causes slightly long running tasks to kill off any queued messages.
+Update your settings file to include the following:
+
+```python
+CHANNEL_LAYERS = {
+    'default': {
+        ...
+    },
+    'long': {
+        'BACKEND': 'asgi_redis.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [REDIS_URL],
+            'expiry': 1800,
+            'channel_capacity': {
+                'cq-tasks': 1000
+            }
+        },
+        'ROUTING': 'path.to.your.channels.channel_routing',
+    },
+}
+
+CQ_CHANNEL_LAYER = 'long'
 ```
 
 
