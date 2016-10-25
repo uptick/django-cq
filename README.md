@@ -10,7 +10,7 @@ the Channels machinery.
 
 ## Why
 
-There are two reasons:
+There are three reasons:
 
  1. Aiming for more fault tolerant tasks. There are many occasions where information
     regarding how tests are progressing is needed to be stored persistently. For
@@ -105,7 +105,7 @@ Basic task usage is straight forward:
 
 ```python
 @task
-def send_email(task, addr):
+def send_email(cqt, addr):
     ...
     return 'OK'
 
@@ -113,6 +113,10 @@ task = send_emails.delay('dummy@dummy.org')
 task.wait()
 print(task.result)  # "OK"
 ```
+
+Here, `cqt` is the task representation for the `send_email` task. This
+can be used to launch subtasks, chain subsequent tasks, amongst other
+things.
 
 Tasks may also be run in serial by just calling them:
 
@@ -129,10 +133,10 @@ parent tasks:
 
 ```python
 @task
-def send_emails(task):
+def send_emails(cqt):
     ...
     for addr in email_addresses:
-        task.subtask(send_email, addr)
+        cqt.subtask(send_email, addr)
     ...
     return 'OK'
 
@@ -149,9 +153,9 @@ until all subtasks are also complete.
 from cq.models import Task
 
 @task
-def parent(task):
+def parent(cqt):
     task_a.delay()  # not a subtask
-    task.subtask(task_b)  # subtask
+    cqt.subtask(task_b)  # subtask
 
 parent.delay()
 parent.status == Task.STATUS_WAITING  # True
@@ -163,10 +167,73 @@ parent.status == Task.STATUS_COMPLETE  # True
 
 ## Chained Tasks
 
+TODO
+
 ```python
 @task
-def calculate_something(task):
+def calculate_something(cqt):
     return calc_a.delay(3).chain(add_a_to_4, (4,))
+```
+
+
+## Non-atomic Tasks
+
+By default every CQ task is atomic; no changes to the database will persist
+unless the task finishes without an exception. If you need to keep changes to
+the database, even in the event of an error, then use the `atomic` flag:
+
+```python
+@task(atomic=False)
+def unsafe_task(cqt):
+    pass
+```
+
+
+## Logging
+
+For longer running tasks it's useful to be able to access an ongoing log
+of the task's progress. CQ tasks have a `log` method to send logging
+messages to both the standard Django log streams, and also cache them on
+the running task.
+
+```python
+@task
+def long_task(cqt):
+    cqt.log('standard old log')
+    cqt.log('debugging log', logging.DEBUG)
+```
+
+If the current task is a subtask, the logs will go to the parent.
+This way there is a central task (the top-level task) which can be used
+to monitor the progress and status of a network of sub and chained tasks.
+
+### Performance
+
+Due to the way logs are handled there can be issues with performance
+with a lot of frequent log messages. There are two ways to prevent this.
+
+Reduce the frequency of logs by setting `publish` to `False` on as many
+log calls as you can. This will cache the logs locally and store them
+on the next `publish=True` call.
+
+```python
+@task
+def long_task(cqt):
+    for ii in range(100):
+        cqt.log('iteration %d' % ii, publish=False)
+    cqt.log('done')  # publish=True
+```
+
+Secondly, reducing the volume of logs may be accomplished by limiting the
+number of log lines that are kept. The `limit` option specifies this. The
+following will only keep 10 of the logged iterations:
+
+```python
+@task
+def long_task(cqt):
+    for ii in range(100):
+        cqt.log('iteration %d' % ii, publish=False)
+    cqt.log('done', limit=10)
 ```
 
 
