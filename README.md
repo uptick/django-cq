@@ -236,19 +236,49 @@ def long_task(cqt):
     cqt.log('done', limit=10)
 ```
 
+## Time-to-live
+
+TODO
 
 ## Repeating Tasks
 
-CQ comes with basic repeating tasks. There are two ways to create
+CQ comes with robust repeating tasks. There are two ways to create
 repeating tasks:
 
  1. From the Django admin.
 
  2. Using a data migration.
 
-TODO
+From the admin, click into `cq` and `repeating tasks`. From there you
+can create a new repeating task, specifying the background task to call,
+and a CRON time for repetition.
+
+To create a repeating task from a migration, use the helper function
+`schedule_task`.
+
+```
+from django.db import migrations
+from cq.models import schedule_task
+
+from myapp.tasks import a_task
 
 
-## Time-to-live
+def add_repeating(apps, scema_editor):
+    RepeatingTask = apps.get_model('cq.RepeatingTask')
+    schedule_task(
+        RepeatingTask,
+        '* * * * *',
+        a_task
+    )
 
-TODO
+
+class Migration(migrations.Migration):
+    operations = [
+        migrations.RunPython(add_repeating, reverse_code=migrations.RunPython.noop)
+    ]
+```
+
+
+### Coalescing
+
+# TODO
