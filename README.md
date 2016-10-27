@@ -256,7 +256,7 @@ and a CRON time for repetition.
 To create a repeating task from a migration, use the helper function
 `schedule_task`.
 
-```
+```python
 from django.db import migrations
 from cq.models import schedule_task
 
