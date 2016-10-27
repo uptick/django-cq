@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='django-cq',
-    version='0.1.9',
+    version='0.1.10',
     author='Luke Hodkinson',
     author_email='furious.luke@gmail.com',
     maintainer='Luke Hodkinson',
