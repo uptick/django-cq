@@ -232,7 +232,7 @@ class Task(models.Model):
         self.save(update_fields=('details',))
 
     def waiting(self, task=None, result=None):
-        logger.info('Waiting task: {}'.format(self.func_name))
+        logger.info('{}: Waiting task: {}'.format(self.id, self.func_name))
         self.status = self.STATUS_WAITING
         self.waiting_on = task
         if task is not None and task.parent != self:
@@ -240,7 +240,7 @@ class Task(models.Model):
             task.parent = self
             task.save(update_fields=('parent',))
         if result is not None:
-            logger.info('Setting task result: {} = {}'.format(
+            logger.debug('Setting task result: {} = {}'.format(
                 self.func_name, result
             ))
             self.details['result'] = result
@@ -255,10 +255,10 @@ class Task(models.Model):
     def success(self, result=None):
         """To be run from workers.
         """
-        logger.info('Task succeeded: {}'.format(self.func_name))
+        logger.info('{}: Task succeeded: {}'.format(self.id, self.func_name))
         self.status = self.STATUS_SUCCESS
         if result is not None:
-            logger.info('Setting task result: {} = {}'.format(
+            logger.debug('Setting task result: {} = {}'.format(
                 self.func_name, result
             ))
             self.details['result'] = result
@@ -310,7 +310,7 @@ class Task(models.Model):
         cache.delete(key)
 
     def child_succeeded(self, task, result):
-        logger.info('Task child succeeded: {}'.format(self.func_name))
+        logger.info('{}: Task child succeeded: {}'.format(self.id, self.func_name))
         if task == self.waiting_on and self.status not in self.STATUS_ERROR:
             logger.info('Setting task result: {} = {}'.format(
                 self.func_name, result
@@ -318,7 +318,7 @@ class Task(models.Model):
             self.details['result'] = result
             self.save(update_fields=('details',))
         if all([s.status == self.STATUS_SUCCESS for s in self.subtasks.all()]):
-            logger.info('All children succeeded: {}'.format(self.func_name))
+            logger.debug('All children succeeded: {}'.format(self.func_name))
             self.success()
 
     def failure(self, err, retry=False):
@@ -345,7 +345,7 @@ class Task(models.Model):
         msg += '\nError: {}'.format(self.details['error'])
         if 'traceback' in self.details:
             msg += '\nTraceback:\n{}'.format(self.details['traceback'])
-        logger.error(msg)
+        logger.error('{}: {}'.format(self.id, msg))
 
         if retry:
             self.status = self.STATUS_RETRY
@@ -373,7 +373,7 @@ class Task(models.Model):
         if self.parent:
             self.parent.log(msg, level, origin or self, publish=publish)
         else:
-            logger.log(level, msg)
+            logger.log(level, '{}: {}'.format(self.id, msg))
             data = {
                 'message': msg,
                 'timestamp': str(timezone.now())

@@ -21,7 +21,7 @@ def run_task(message):
     if task.status == Task.STATUS_REVOKED:
         logger.info('Not running revoked task: {}'.format(func_name))
         return
-    logger.info('Running task: {}'.format(func_name))
+    logger.info('{}: Running task: {}'.format(task_id, func_name))
     backend.set_current_task(task_id)
     task.pre_start()
     task_func = TaskFunc.get_task(func_name)
