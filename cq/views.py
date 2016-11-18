@@ -9,10 +9,10 @@ class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
     serializer_class = TaskSerializer
 
-    def get_serializer(self, data):
+    def get_serializer(self, data=None, *args, **kwargs):
         if getattr(self, 'creating', False):
             return CreateTaskSerializer(data=data)
-        return super().get_serializer(data)
+        return super().get_serializer(data, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
         self.creating = True
