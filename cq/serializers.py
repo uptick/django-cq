@@ -6,6 +6,7 @@ from .models import Task, delay
 class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
+        fields = '__all__'
 
 
 class CreateTaskSerializer(serializers.Serializer):

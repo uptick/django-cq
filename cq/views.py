@@ -1,6 +1,5 @@
-from django.shortcuts import render
 from django.db import transaction
-from rest_framework import viewsets, mixins
+from rest_framework import viewsets
 
 from .serializers import TaskSerializer, CreateTaskSerializer
 from .models import Task
