@@ -182,7 +182,8 @@ class Task(models.Model):
 
         # Ensure our logs are fresh.
         self._task_logs = []
-        cache.delete(self._get_log_key())
+        with redis_connection() as con:
+            con.delete(self._get_log_key())
 
     def start(self, result=None, pre_start=True):
         """To be run from workers.
@@ -307,7 +308,8 @@ class Task(models.Model):
         if 'logs' not in self.details:
             self.details['logs'] = []
         self.details['logs'].extend(logs)
-        cache.delete(key)
+        with redis_connection() as con:
+            con.delete(key)
 
     def child_succeeded(self, task, result):
         logger.info('{}: Task child succeeded: {}'.format(self.id, self.func_name))

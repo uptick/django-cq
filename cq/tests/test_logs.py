@@ -2,10 +2,10 @@ from django.test import override_settings
 from channels.tests import (
     TransactionChannelTestCase
 )
+from django_redis import get_redis_connection
 
 from ..decorators import task
 from ..consumers import run_task
-from ..models import Task
 from .test_base import SilentMixin
 
 
@@ -66,3 +66,17 @@ class BasicLogTestCase(SilentMixin, TransactionChannelTestCase):
             'Second log from task_a.\n'
             'Log from task_b.'
         ))
+
+    def test_logs_cleared_from_redis(self):
+        task = task_a.delay()
+        while 1:
+            msg = self.get_next_message('cq-tasks')
+            if not msg:
+                break
+            run_task(msg)
+        task.wait()
+        con = get_redis_connection()
+        res = con.keys('cq:*:logs')
+        key = task._get_log_key()
+        res = con.keys('cq:*:logs')
+        self.assertFalse(key.encode() in res)
