@@ -8,11 +8,12 @@ from django.core.management import call_command
 from .backends import backend
 from .decorators import task
 from .models import Task
+from .utils import redis_connection
 
 
 @task
 def clean_up(task, *args):
-    """Remove stale tasks.
+    """ Remove stale tasks.
 
     Only remove tasks that have succeeded, are older than the TTl, have
     no dependencies that are still incomplete.
@@ -25,6 +26,15 @@ def clean_up(task, *args):
     if len(to_del):
         task.log('Cleaned up: {}'.format(', '.join([str(o.id) for o in to_del])))
         to_del.delete()
+
+
+@task
+def clear_logs(cqt):
+    """ Remove all logs from REDIS.
+    """
+    with redis_connection() as con:
+        for key in con.keys('cq:*:logs'):
+            con.delete(key)
 
 
 @task

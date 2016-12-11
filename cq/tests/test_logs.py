@@ -6,6 +6,7 @@ from django_redis import get_redis_connection
 
 from ..decorators import task
 from ..consumers import run_task
+from ..tasks import clear_logs
 from .test_base import SilentMixin
 
 
@@ -80,3 +81,20 @@ class BasicLogTestCase(SilentMixin, TransactionChannelTestCase):
         key = task._get_log_key()
         res = con.keys('cq:*:logs')
         self.assertFalse(key.encode() in res)
+
+
+@override_settings(CQ_SERIAL=False, CQ_CHANNEL_LAYER='default')
+class ClearLogsTestCase(SilentMixin, TransactionChannelTestCase):
+    def test_clear_logs(self):
+        con = get_redis_connection()
+        con.set('cq:test:logs', '')
+        con.set('cq:another:logs', '')
+        self.assertNotEqual(con.keys('cq:*:logs'), [])
+        clear_logs()
+        self.assertEqual(con.keys('cq:*:logs'), [])
+
+    def test_clear_logs_when_none_exist(self):
+        con = get_redis_connection()
+        self.assertEqual(con.keys('cq:*:logs'), [])
+        clear_logs()
+        self.assertEqual(con.keys('cq:*:logs'), [])
