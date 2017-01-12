@@ -31,7 +31,7 @@ class Backend(object):
     def get_queued_tasks(cls):
         channels = ['cq-tasks']
         cl = Channel('cq-tasks').channel_layer
-        indexes = cl._receive_many_list_names(channels)
+        indexes = cl._receive_list_names(channels)
         if indexes is None:
             return []
         index = random.choice(list(indexes.keys()))
