@@ -153,6 +153,9 @@ class SerialTask(object):
         self.previous = previous
         self._errbacks = []
 
+        # Mimic behavior of 'logs' from the model.
+        self.logs = []
+
     def subtask(self, func, args=(), kwargs={}, **kw):
         # Note: A serial task will automatically be created.
         return func(*args, task=self, **kwargs)
