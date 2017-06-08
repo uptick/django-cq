@@ -16,7 +16,7 @@ logger = logging.getLogger('cq')
 
 def perform_scheduling():
     with cache.lock('cq:scheduler:lock', timeout=10):
-        logger.debug('Checking for scheduled tasks.')
+        logger.info('Checking for scheduled tasks.')
         now = timezone.now()
         try:
             rtasks = RepeatingTask.objects.filter(next_run__lte=now)
@@ -46,7 +46,7 @@ def scheduler_internal():
 
 
 def scheduler(*args, **kwargs):
-    logger.debug('Scheduler thread active.')
+    logger.info('Scheduler thread active.')
     while 1:
         try:
             scheduler_internal()
