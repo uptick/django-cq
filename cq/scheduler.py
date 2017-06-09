@@ -15,9 +15,9 @@ logger = logging.getLogger('cq')
 
 
 def perform_scheduling():
-    logger.info('cq-scheduler: performing scheduling started')
+    logger.debug('cq-scheduler: performing scheduling started')
     with cache.lock('cq:scheduler:lock', timeout=10):
-        logger.info('cq-scheduler: checking for scheduled tasks')
+        logger.debug('cq-scheduler: checking for scheduled tasks')
         now = timezone.now()
         try:
             rtasks = RepeatingTask.objects.filter(next_run__lte=now)
@@ -29,11 +29,11 @@ def perform_scheduling():
                     logger.error(format_exc())
         except ProgrammingError:
             logger.warning('CQ scheduler not running, DB is out of date.')
-    logger.info('cq-scheduler: performing scheduling finished')
+    logger.debug('cq-scheduler: performing scheduling finished')
 
 
 def scheduler_internal():
-    logger.info('cq-scheduler: Determining winning scheduler.')
+    logger.debug('cq-scheduler: Determining winning scheduler.')
     am_scheduler = False
     with redis_connection() as conn:
         if conn.setnx('cq:scheduler', 'dummy'):
@@ -43,7 +43,7 @@ def scheduler_internal():
         logger.info('cq-scheduler: winner')
         perform_scheduling()
     else:
-        logger.info('cq-scheduler: loser')
+        logger.debug('cq-scheduler: loser')
     now = timezone.now()
     delay = ((now + timedelta(minutes=1)).replace(second=0, microsecond=0) - now).total_seconds()
     logger.info('cq-scheduler: Waiting {} seconds for next schedule attempt.'.format(delay))
@@ -51,7 +51,7 @@ def scheduler_internal():
 
 
 def scheduler(*args, **kwargs):
-    logger.info('Scheduler thread active.')
+    logger.info('cq-scheduler: Scheduler thread active.')
     while 1:
         try:
             scheduler_internal()
