@@ -39,7 +39,7 @@ There is work being done to remove these restrictions.
 Use pip if you can:
 
 ```bash
-pip install cq
+pip install django-cq
 ```
 
 or live on the edge:
