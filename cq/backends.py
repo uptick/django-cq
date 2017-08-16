@@ -17,6 +17,7 @@ class Backend(object):
 
     @classmethod
     def set_current_task(cls, task_id=None):
+        logger.debug('cq-backend: setting current task to {}'.format(task_id))
         with threading.Lock():
             t = threading.current_thread()
             if task_id is not None:
@@ -26,7 +27,9 @@ class Backend(object):
                     del cls.current_tasks[t]
                 except KeyError:
                     pass
+        logger.debug('cq-backend: done')
 
+                
     @classmethod
     def get_queued_tasks(cls):
         channels = ['cq-tasks']

@@ -176,6 +176,7 @@ class Task(models.Model):
             start += delta
 
     def pre_start(self):
+        logger.debug('{}: task prestart'.format(self.id))
         self.status = self.STATUS_RUNNING
         self.started = timezone.now()
         self.save(update_fields=('status', 'started'))
@@ -184,10 +185,12 @@ class Task(models.Model):
         self._task_logs = []
         with redis_connection() as con:
             con.delete(self._get_log_key())
+        logger.debug('{}: done'.format(self.id))
 
     def start(self, result=None, pre_start=True):
         """To be run from workers.
         """
+        logger.debug('{}: task start'.format(self.id))
         if pre_start:
             self.pre_start()
         func, args, kwargs = from_signature(self.signature)
@@ -199,6 +202,7 @@ class Task(models.Model):
                 return func(*args, task=self, **kwargs)
         else:
             return func(*args, task=self, **kwargs)
+        logger.debug('{}: done'.format(self.id))
 
     def revoke(self):
         with cache.lock(str(self.id), timeout=2):
