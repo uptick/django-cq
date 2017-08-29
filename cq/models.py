@@ -1,26 +1,24 @@
+import json
+import logging
 import re
 import time
-import json
-from datetime import datetime
-from datetime import timedelta
 import uuid
+from datetime import datetime, timedelta
 from traceback import format_tb
-import logging
 
-from django.db import models, transaction
-from django.contrib.postgres.fields import JSONField
-from django.conf import settings
-from django.utils import timezone
-from django.core.exceptions import ValidationError
-from django.core.cache import cache
-from channels import Channel, DEFAULT_CHANNEL_LAYER
 from asgi_redis import RedisChannelLayer
+from channels import DEFAULT_CHANNEL_LAYER, Channel
 from croniter import croniter
+from django.conf import settings
+from django.contrib.postgres.fields import JSONField
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
+from django.utils import timezone
 
-from .task import from_signature, to_signature, to_func_name, TaskFunc
 from .managers import TaskManager
+from .task import TaskFunc, from_signature, to_func_name, to_signature
 from .utils import import_attribute, redis_connection
-
 
 logger = logging.getLogger('cq')
 
@@ -481,16 +479,21 @@ class RepeatingTask(models.Model):
     coalesce = models.BooleanField(default=True)
 
     def __str__(self):
+        arguments = ', '.join(map(lambda x: repr(x), self.args))
+        if self.kwargs:
+            arguments += ', '.join(map(
+                lambda row: '{}={}'.format(row[0], repr(row[1])), self.kwargs.items()
+            ))
+        task = '{}({})'.format(self.func_name, arguments)
         if self.last_run:
-            return '{} ({})'.format(self.func_name, self.last_run)
-        else:
-            return self.func_name
+            task += ' ({})'.format(self.last_run)
+        return task
 
     def submit(self):
         if self.coalesce and Task.objects.active(signature__func_name=self.func_name):
             logger.info('Coalescing task: {}'.format(self.func_name))
             return None
-        logger.info('Launching scheduled task: {}'.format(self.func_name))
+        logger.info('Launching scheduled task: {}'.format(self))
         with transaction.atomic():
             task = delay(self.func_name, tuple(self.args), self.kwargs,
                          submit=False, result_ttl=self.result_ttl)
@@ -501,7 +504,9 @@ class RepeatingTask(models.Model):
         return task
 
     def update_next_run(self):
-        self.next_run = croniter(self.crontab, timezone.localtime(timezone.now())).get_next(datetime)
+        self.next_run = croniter(
+            self.crontab, timezone.localtime(timezone.now())
+        ).get_next(datetime)
 
     @classmethod
     def schedule(cls, crontab, func, args=(), kwargs={}):
