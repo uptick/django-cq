@@ -1,4 +1,5 @@
 from django.core.management.base import CommandError
+from django.conf import settings
 from channels.management.commands.runworker import Command as BaseCommand
 
 
@@ -23,6 +24,9 @@ class Command(BaseCommand):
             wkr_threads = int(options.get('worker_threads', 0))
         except TypeError:
             wkr_threads = 0
+        layer = getattr(settings, 'CQ_CHANNEL_LAYER', None)
+        if layer:
+            options['layer'] = layer
         if (web_threads or wkr_threads):
             options['threads'] = web_threads + wkr_threads
             if web_threads:

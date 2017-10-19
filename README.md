@@ -98,6 +98,13 @@ CHANNEL_LAYERS = {
 CQ_CHANNEL_LAYER = 'long'
 ```
 
+In order to process messages sent on the "cq-tasks" channel a worker
+process needs to be launched:
+
+```
+./manage.py cq_runworker
+```
+
 
 ## Tasks
 
