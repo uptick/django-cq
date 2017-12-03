@@ -78,7 +78,8 @@ class Task(models.Model):
     signature = JSONField(default={}, blank=True)
     details = JSONField(default={}, blank=True)
     parent = models.ForeignKey('self', blank=True, null=True,
-                               related_name='subtasks')
+                               related_name='subtasks',
+                               on_delete=models.CASCADE)
     previous = models.ForeignKey('self', related_name='next', blank=True,
                                  null=True, on_delete=models.SET_NULL)
     waiting_on = models.ForeignKey('self', blank=True, null=True,
