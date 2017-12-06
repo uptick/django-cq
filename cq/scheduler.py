@@ -21,9 +21,9 @@ def perform_scheduling():
         now = timezone.now()
         try:
             rtasks = RepeatingTask.objects.filter(next_run__lte=now)
-            logger.info(f'cq-scheduler: have {rtasks.count()} repeating task(s) ready')
+            logger.info('cq-scheduler: have {} repeating task(s) ready'.format(rtasks.count()))
             for rt in rtasks:
-                logger.info(f'cq-scheduler: submitting {rt}')
+                logger.info('cq-scheduler: submitting {}'.format(rt))
                 try:
                     rt.submit()
                 except:
