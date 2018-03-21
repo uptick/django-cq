@@ -28,7 +28,6 @@ class Backend(object):
                 except KeyError:
                     pass
         logger.debug('cq-backend: done')
-
                 
     @classmethod
     def get_queued_tasks(cls):

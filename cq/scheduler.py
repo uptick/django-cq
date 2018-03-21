@@ -15,9 +15,9 @@ logger = logging.getLogger('cq')
 
 
 def perform_scheduling():
-    logger.info('cq-scheduler: performing scheduling started')
+    logger.debug('cq-scheduler: performing scheduling started')
     with cache.lock('cq:scheduler:lock', timeout=10):
-        logger.info('cq-scheduler: checking for scheduled tasks')
+        logger.debug('cq-scheduler: checking for scheduled tasks')
         now = timezone.now()
         try:
             rtasks = RepeatingTask.objects.filter(next_run__lte=now)
@@ -31,7 +31,7 @@ def perform_scheduling():
                     logger.error(format_exc())
         except ProgrammingError:
             logger.warning('CQ scheduler not running, DB is out of date.')
-    logger.info('cq-scheduler: performing scheduling finished')
+    logger.debug('cq-scheduler: performing scheduling finished')
 
 
 def scheduler_internal():
