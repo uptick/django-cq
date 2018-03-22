@@ -1,14 +1,19 @@
 import os
-from setuptools import setup, find_packages
+import re
+
+from setuptools import find_packages, setup
+
+with open('./cq/__init__.py') as f:
+    exec(re.search(r'VERSION = .*', f.read(), re.DOTALL).group())
 
 setup(
     name='django-cq',
-    version='0.1.16',
+    version=__version__,
     author='Luke Hodkinson',
-    author_email='furious.luke@gmail.com',
-    maintainer='Luke Hodkinson',
-    maintainer_email='furious.luke@gmail.com',
-    url='https://github.com/furious-luke/django-cq',
+    author_email='luke.hodkinson@uptickhq.com',
+    maintainer='Uptick',
+    maintainer_email='dev@uptickhq.com',
+    url='https://github.com/uptick/django-cq',
     description='',
     long_description=open(os.path.join(os.path.dirname(__file__), 'README.md')).read(),
     classifiers = [
