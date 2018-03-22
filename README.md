@@ -1,5 +1,5 @@
-# django-cq
-
+# Django-CQ
+[![PyPI version](https://badge.fury.io/py/django-cq.svg)](https://badge.fury.io/py/django-cq)
 
 ## Description
 
