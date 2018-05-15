@@ -6,9 +6,12 @@ import uuid
 from datetime import datetime, timedelta
 from traceback import format_tb
 
-from asgi_redis import RedisChannelLayer
-from channels import DEFAULT_CHANNEL_LAYER, Channel
+from asgiref.sync import async_to_sync
+from channels import DEFAULT_CHANNEL_LAYER
+from channels.exceptions import ChannelFull
+from channels.layers import get_channel_layer
 from croniter import croniter
+
 from django.conf import settings
 from django.contrib.postgres.fields import JSONField
 from django.core.cache import cache
@@ -73,24 +76,18 @@ class Task(models.Model):
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    status = models.CharField(max_length=1, choices=STATUS_CHOICES,
-                              default=STATUS_PENDING, db_index=True)
+    status = models.CharField(max_length=1, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
     signature = JSONField(default={}, blank=True)
     details = JSONField(default={}, blank=True)
-    parent = models.ForeignKey('self', blank=True, null=True,
-                               related_name='subtasks',
-                               on_delete=models.CASCADE)
-    previous = models.ForeignKey('self', related_name='next', blank=True,
-                                 null=True, on_delete=models.SET_NULL)
-    waiting_on = models.ForeignKey('self', blank=True, null=True,
-                                   on_delete=models.SET_NULL)
+    parent = models.ForeignKey('self', blank=True, null=True, related_name='subtasks', on_delete=models.CASCADE)
+    previous = models.ForeignKey('self', related_name='next', blank=True, null=True, on_delete=models.SET_NULL)
+    waiting_on = models.ForeignKey('self', blank=True, null=True, on_delete=models.SET_NULL)
     submitted = models.DateTimeField(auto_now_add=True)
     started = models.DateTimeField(null=True, blank=True)
     finished = models.DateTimeField(null=True, blank=True)
     result_ttl = models.PositiveIntegerField(default=1800, blank=True)
     result_expiry = models.DateTimeField(null=True, blank=True)
-    at_risk = models.CharField(max_length=1, choices=AT_RISK_CHOICES,
-                               default=AT_RISK_NONE)
+    at_risk = models.CharField(max_length=1, choices=AT_RISK_CHOICES, default=AT_RISK_NONE)
     retries = models.PositiveIntegerField(default=0)
     last_retry = models.DateTimeField(null=True, blank=True)
     force_chain = models.BooleanField(default=False)
@@ -111,27 +108,31 @@ class Task(models.Model):
         self.at_risk = self.AT_RISK_NONE
         self.retries += 1
         self.last_retry = timezone.now()
-        self.save(update_fields=('status', 'started', 'finished',
-                                 'details', 'at_risk', 'retries',
-                                 'last_retry'))
+        self.save(
+            update_fields=(
+                'status', 'started', 'finished',
+                'details', 'at_risk', 'retries',
+                'last_retry'
+            )
+        )
         self.submit()
 
     def submit(self, *pre_args):
-        """To be run from server.
+        """ To be run from server.
         """
         with cache.lock(str(self.id), timeout=2):
 
-            # Need to reload just in case we've been modified elsewhere.
+            # Need to reload just in case it's been modified elsewhere.
             self.refresh_from_db()
 
-            # If we've been moved to revoke, don't run. If we're anything
+            # If we've been moved to revoke, don't run. If it's anything
             # other than pending, error.
             if self.status == self.STATUS_REVOKED:
                 return
             elif self.status != self.STATUS_PENDING:
-                msg = 'Task {} cannot be submitted multiple times.'
-                msg = msg.format(self.id)
-                raise DuplicateSubmitError(msg)
+                raise DuplicateSubmitError(
+                    'Task %s cannot be submitted multiple times.' % self.id
+                )
             self.status = self.STATUS_QUEUED
 
             # Prepend arguments.
@@ -148,13 +149,12 @@ class Task(models.Model):
                 transaction.on_commit(lambda: self.send())
 
     def send(self):
-        layer = getattr(settings, 'CQ_CHANNEL_LAYER', DEFAULT_CHANNEL_LAYER)
+        layer_name = getattr(settings, 'CQ_CHANNEL_LAYER', DEFAULT_CHANNEL_LAYER)
+        layer = get_channel_layer(layer_name)
         logger.debug('Sending CQ message on "{}" layer.'.format(layer))
         try:
-            Channel('cq-tasks', alias=layer).send({
-                'task_id': str(self.id),
-            }, immediately=True)
-        except RedisChannelLayer.ChannelFull:
+            async_to_sync(layer.send)('cq-task', {'type': 'run_task', 'task_id': str(self.id)})
+        except ChannelFull:
             with cache.lock(str(self.id), timeout=2):
                 self.status = self.STATUS_RETRY
                 self.save(update_fields=('status',))

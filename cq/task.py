@@ -1,13 +1,12 @@
 import inspect
-from functools import wraps
-import uuid
 import logging
+import uuid
+from functools import wraps
 
-from django.conf import settings
 from django import forms
+from django.conf import settings
 
-from .utils import to_import_string, import_attribute
-
+from .utils import import_attribute, to_import_string
 
 logger = logging.getLogger('cq')
 
