@@ -150,9 +150,10 @@ class Task(models.Model):
     def send(self):
         layer_name = getattr(settings, 'CQ_CHANNEL_LAYER', DEFAULT_CHANNEL_LAYER)
         layer = get_channel_layer(layer_name)
-        logger.debug('Sending CQ message on "{}" layer.'.format(layer))
+        logger.info('Sending CQ message on "{}" layer.'.format(layer))
         try:
             async_to_sync(layer.send)('cq-task', {'type': 'run_task', 'task_id': str(self.id)})
+            logger.info('Message sent.')
         except ChannelFull:
             logger.error('CQ: Channel layer full.')
             self.status = self.STATUS_RETRY
