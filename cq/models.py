@@ -11,7 +11,6 @@ from channels import DEFAULT_CHANNEL_LAYER
 from channels.exceptions import ChannelFull
 from channels.layers import get_channel_layer
 from croniter import croniter
-
 from django.conf import settings
 from django.contrib.postgres.fields import JSONField
 from django.core.cache import cache
@@ -155,9 +154,9 @@ class Task(models.Model):
         try:
             async_to_sync(layer.send)('cq-task', {'type': 'run_task', 'task_id': str(self.id)})
         except ChannelFull:
-            with cache.lock(str(self.id), timeout=2):
-                self.status = self.STATUS_RETRY
-                self.save(update_fields=('status',))
+            logger.error('CQ: Channel layer full.')
+            self.status = self.STATUS_RETRY
+            self.save(update_fields=('status',))
 
     def wait(self, timeout=None):
         """Wait for task to finish. To be called from server.
