@@ -17,6 +17,7 @@ from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
+from django_redis import get_redis_connection
 
 from .managers import TaskManager
 from .task import TaskFunc, from_signature, to_func_name, to_signature
@@ -148,16 +149,21 @@ class Task(models.Model):
                 transaction.on_commit(lambda: self.send())
 
     def send(self):
-        layer_name = getattr(settings, 'CQ_CHANNEL_LAYER', DEFAULT_CHANNEL_LAYER)
-        layer = get_channel_layer(layer_name)
-        logger.info('Sending CQ message on "{}" layer.'.format(layer))
-        try:
-            async_to_sync(layer.send)('cq-task', {'type': 'run_task', 'task_id': str(self.id)})
-            logger.info('Message sent.')
-        except ChannelFull:
-            logger.error('CQ: Channel layer full.')
-            self.status = self.STATUS_RETRY
-            self.save(update_fields=('status',))
+        if getattr(settings, 'CQ_BACKEND', '').lower() == 'redis':
+            layer_name = 'cq'
+            conn = get_redis_connection()
+            conn.lpush(layer_name, str(self.id))
+        else:
+            layer_name = getattr(settings, 'CQ_CHANNEL_LAYER', DEFAULT_CHANNEL_LAYER)
+            layer = get_channel_layer(layer_name)
+            logger.info('Sending CQ message on "{}" layer.'.format(layer_name))
+            try:
+                async_to_sync(layer.send)('cq-task', {'type': 'run_task', 'task_id': str(self.id)})
+                logger.info('Message sent.')
+            except ChannelFull:
+                logger.error('CQ: Channel layer full.')
+                self.status = self.STATUS_RETRY
+                self.save(update_fields=('status',))
 
     def wait(self, timeout=None):
         """Wait for task to finish. To be called from server.

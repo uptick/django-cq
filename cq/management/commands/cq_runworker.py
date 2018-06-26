@@ -1,9 +1,13 @@
 import logging
+import time
 from threading import Thread
 
 from channels.management.commands.runworker import Command as BaseCommand
+from django_redis import get_redis_connection
 
 from django.conf import settings
+
+from ...consumers import run_task
 
 logger = logging.getLogger('cq')
 
@@ -20,4 +24,18 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if getattr(settings, 'CQ_SCHEDULER', True):
             launch_scheduler()
-        super().handle(*args, **options)
+        if getattr(settings, 'CQ_BACKEND', '').lower() == 'redis':
+            self.handle_redis_backend()
+        else:
+            super().handle(*args, **options)
+
+    def handle_redis_backend(self):
+        while True:
+            conn = get_redis_connection()
+            while True:
+                message = conn.brpop('cq')
+                try:
+                    run_task(message[1].decode())
+                except Exception as e:
+                    logger.error(str(e))
+                time.sleep(1)
