@@ -8,7 +8,7 @@ from django.db.utils import ProgrammingError
 from django.utils import timezone
 
 from .models import RepeatingTask
-from .utils import redis_connection
+from .utils import redis_connection, get_redis_key
 
 logger = logging.getLogger('cq')
 
@@ -36,7 +36,7 @@ def scheduler_internal():
     logger.debug('cq-scheduler: determining winning scheduler')
     am_scheduler = False
     with redis_connection() as conn:
-        if conn.set('cq:scheduler', 'dummy', nx=True, ex=30):
+        if conn.set(get_redis_key('cq:scheduler'), 'dummy', nx=True, ex=30):
             # conn.expire('cq:scheduler', 30)
             am_scheduler = True
     if am_scheduler:

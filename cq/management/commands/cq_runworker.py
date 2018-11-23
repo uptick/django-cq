@@ -8,6 +8,7 @@ from django_redis import get_redis_connection
 from django.conf import settings
 
 from ...consumers import run_task
+from ...utils import get_redis_key
 
 logger = logging.getLogger('cq')
 
@@ -33,7 +34,7 @@ class Command(BaseCommand):
         while True:
             conn = get_redis_connection()
             while True:
-                message = conn.brpop('cq')
+                message = conn.brpop(get_redis_key('cq'))
                 try:
                     run_task(message[1].decode())
                 except Exception as e:
