@@ -77,8 +77,8 @@ class Task(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     status = models.CharField(max_length=1, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
-    signature = JSONField(default={}, blank=True)
-    details = JSONField(default={}, blank=True)
+    signature = JSONField(default=dict, blank=True)
+    details = JSONField(default=dict, blank=True)
     parent = models.ForeignKey('self', blank=True, null=True, related_name='subtasks', on_delete=models.CASCADE)
     previous = models.ForeignKey('self', related_name='next', blank=True, null=True, on_delete=models.SET_NULL)
     waiting_on = models.ForeignKey('self', blank=True, null=True, on_delete=models.SET_NULL)
@@ -478,8 +478,8 @@ class RepeatingTask(models.Model):
                                validators=[validate_cron],
                                help_text='Minute Hour Day Month Weekday')
     func_name = models.CharField(max_length=256, validators=[validate_func_name])
-    args = JSONField(default=[], blank=True)
-    kwargs = JSONField(default={}, blank=True)
+    args = JSONField(default=list, blank=True)
+    kwargs = JSONField(default=dict, blank=True)
     result_ttl = models.PositiveIntegerField(default=1800, blank=True)
     last_run = models.DateTimeField(blank=True, null=True)
     next_run = models.DateTimeField(blank=True, null=True, db_index=True)
