@@ -177,8 +177,8 @@ class FuncNameWidget(forms.TextInput):
         self._list = sorted(list(TaskFunc.task_table.keys()))
         self.attrs.update({'list': 'list__%s' % self._name})
 
-    def render(self, name, value, attrs=None):
-        text_html = super().render(name, value, attrs=attrs)
+    def render(self, name, value, attrs=None, renderer=None):
+        text_html = super().render(name, value, attrs=attrs, renderer=renderer)
         data_list = '<datalist id="list__%s">' % self._name
         for item in self._list:
             data_list += '<option value="%s">' % item
