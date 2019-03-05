@@ -1,28 +1,27 @@
 import logging
 
+from channels.consumer import SyncConsumer
+
 from django.db import transaction
 
 from .models import Task
 from .task import SerialTask, TaskFunc
-from .backends import backend
-
 
 logger = logging.getLogger('cq')
 
 
-def run_task(message):
-    try:
-        task_id = message['task_id']
-    except (TypeError, KeyError):
-        logger.error('Invalid CQ message.')
-        return
+class CQConsumer(SyncConsumer):
+    def run_task(self, message):
+        run_task(message['task_id'])
+
+
+def run_task(task_id):
     task = Task.objects.get(id=task_id)
     func_name = task.signature['func_name']
     if task.status == Task.STATUS_REVOKED:
         logger.info('Not running revoked task: {}'.format(func_name))
         return
     logger.info('{}: running task {}'.format(task_id, func_name))
-    backend.set_current_task(task_id)
     task.pre_start()
     task_func = TaskFunc.get_task(func_name)
     if task_func.atomic:
@@ -47,8 +46,6 @@ def _do_run_task(task_func, task):
                 task.waiting(result=result)
             else:
                 task.success(result)
-    finally:
-        backend.set_current_task()
 
 
 def handle_failure(task_func, task, err):

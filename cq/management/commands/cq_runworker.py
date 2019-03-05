@@ -1,37 +1,42 @@
-from django.core.management.base import CommandError
-from django.conf import settings
+import logging
+import time
+from threading import Thread
+
 from channels.management.commands.runworker import Command as BaseCommand
+from django_redis import get_redis_connection
+
+from django.conf import settings
+
+from ...consumers import run_task
+from ...utils import get_redis_key
+
+logger = logging.getLogger('cq')
+
+
+def launch_scheduler(*args, **kwargs):
+    from ...scheduler import scheduler
+    logger.info('Launching CQ scheduler.')
+    thread = Thread(name='scheduler', target=scheduler)
+    thread.daemon = True
+    thread.start()
 
 
 class Command(BaseCommand):
-    def add_arguments(self, parser):
-        super().add_arguments(parser)
-        parser.add_argument(
-            '--web-threads', action='store',
-            type=int, help='Number of threads to execute.'
-        )
-        parser.add_argument(
-            '--worker-threads', action='store',
-            type=int, help='Number of threads to execute.'
-        )
-
     def handle(self, *args, **options):
-        try:
-            web_threads = int(options.get('web_threads', 0))
-        except TypeError:
-            web_threads = 0
-        try:
-            wkr_threads = int(options.get('worker_threads', 0))
-        except TypeError:
-            wkr_threads = 0
-        layer = getattr(settings, 'CQ_CHANNEL_LAYER', None)
-        if layer:
-            options['layer'] = layer
-        if (web_threads or wkr_threads):
-            options['threads'] = web_threads + wkr_threads
-            if web_threads:
-                if options.get('thread_only_channels', None) is None:
-                    options['thread_only_channels'] = []
-                for ii in range(web_threads):
-                    options['thread_only_channels'].append('%d,http.*' % ii)
-        super().handle(*args, **options)
+        if getattr(settings, 'CQ_SCHEDULER', True):
+            launch_scheduler()
+        if getattr(settings, 'CQ_BACKEND', '').lower() == 'redis':
+            self.handle_redis_backend()
+        else:
+            super().handle(*args, **options)
+
+    def handle_redis_backend(self):
+        while True:
+            conn = get_redis_connection()
+            while True:
+                message = conn.brpop(get_redis_key('cq'))
+                try:
+                    run_task(message[1].decode())
+                except Exception as e:
+                    logger.error(str(e))
+                time.sleep(1)

@@ -5,11 +5,19 @@ import inspect
 import importlib
 import logging
 
+from django.conf import settings
 from redis.exceptions import RedisError
 from django_redis import get_redis_connection
 
 
 logger = logging.getLogger('cq')
+
+
+def get_redis_key(key):
+    prefix = getattr(settings, 'CQ_PREFIX', '')
+    if prefix:
+        prefix += ':'
+    return f'{prefix}{key}'
 
 
 def to_import_string(func):

@@ -1,11 +1,8 @@
 from datetime import timedelta
-import logging
 
-from django.utils import timezone
-from django.core.cache import cache
 from django.core.management import call_command
+from django.utils import timezone
 
-from .backends import backend
 from .decorators import task
 from .models import Task
 from .utils import redis_connection
@@ -54,41 +51,8 @@ def retry_tasks(cqtask, *args, **kwargs):
 
 
 @task
-def check_lost(cqtask, *args):
-    running_task_ids = backend.get_running_tasks()
-    cqtask.log('Running tasks: {}'.format(running_task_ids), logging.DEBUG)
-    queued_task_ids = backend.get_queued_tasks()
-    cqtask.log('Queued tasks: {}'.format(queued_task_ids), logging.DEBUG)
-    queued_tasks = Task.objects.filter(status=Task.STATUS_QUEUED)
-    running_tasks = Task.objects.filter(status=Task.STATUS_RUNNING)
-    for task in queued_tasks:
-        if str(task.id) not in queued_task_ids:
-            with cache.lock(str(task.id), timeout=2):
-                if task.at_risk == Task.AT_RISK_QUEUED:
-                    cqtask.log('Lost in queue: {}'.format(task.id))
-                    task.status = Task.STATUS_LOST
-                    task._store_logs()
-                    task.save(update_fields=['status', 'details'])
-                else:
-                    task.at_risk = Task.AT_RISK_QUEUED
-                    task.save(update_fields=['at_risk'])
-    for task in running_tasks:
-        if str(task.id) not in running_task_ids:
-            with cache.lock(str(task.id), timeout=2):
-                if task.at_risk == Task.AT_RISK_RUNNING:
-                    cqtask.log('Lost on worker: {}'.format(task.id))
-                    task.status = Task.STATUS_LOST
-                    task._store_logs()
-                    task.save(update_fields=['status', 'details'])
-                else:
-                    task.at_risk = Task.AT_RISK_RUNNING
-                    task.save(update_fields=['at_risk'])
-
-
-@task
 def maintenance(task):
     retry_tasks(task=task)
-    check_lost(task=task)
     clean_up(task=task)
 
 

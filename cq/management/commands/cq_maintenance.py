@@ -4,6 +4,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from ...models import Task
+from ...tasks import maintenance
 
 
 class Command(BaseCommand):
@@ -23,6 +24,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if options['clear']:
             self.clear(options)
+        else:
+            maintenance.delay()
 
     def clear(self, options):
         query = {}
