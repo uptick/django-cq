@@ -14,9 +14,10 @@ setup(
     maintainer='Uptick',
     maintainer_email='dev@uptickhq.com',
     url='https://github.com/uptick/django-cq',
-    description='',
+    description='Distributed tasks for Django Channels.',
     long_description=open(os.path.join(os.path.dirname(__file__), 'README.md')).read(),
-    classifiers = [
+    long_description_content_type='text/markdown',
+    classifiers=[
         'Development Status :: 3 - Alpha',
         'Framework :: Django',
         'Intended Audience :: Developers',
