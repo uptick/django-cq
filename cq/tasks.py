@@ -74,7 +74,6 @@ def memory_details(task, method=None):
         task.log(mem_top())
     else:
         import subprocess
-        import shlex
         result = subprocess.check_output(
             'ps --no-headers -eo pmem,vsize,rss,pid,cmd | sort -k 1 -nr',
             shell=True
