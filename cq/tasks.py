@@ -37,14 +37,14 @@ def clear_logs(cqt):
 @task
 def retry_tasks(cqtask, *args, **kwargs):
     retry_delay = kwargs.pop('retry_delay', 1)
-    retry = Task.objects.filter(status=Task.STATUS_RETRY)
+    tasks = Task.objects.filter(status=Task.STATUS_RETRY)
     launched = 0
-    for task in retry:
-        next_retry = (task.retries ** 2) * timedelta(minutes=retry_delay)
+    for t in tasks:
+        next_retry = (t.retries ** 2) * timedelta(minutes=retry_delay)
         now = timezone.now()
-        if not task.last_retry or (now - task.last_retry) >= next_retry:
-            cqtask.log('Retrying: {}'.format(task.id))
-            task.retry()
+        if not t.last_retry or (now - t.last_retry) >= next_retry:
+            cqtask.log('Retrying: {}'.format(t.id))
+            t.retry()
             launched += 1
             if launched >= 20:  # cap at 20
                 break
