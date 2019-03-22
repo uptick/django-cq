@@ -8,7 +8,7 @@ with open('./cq/__init__.py') as f:
 
 setup(
     name='django-cq',
-    version=__version__,
+    version=__version__,  # noqa
     author='Luke Hodkinson',
     author_email='luke.hodkinson@uptickhq.com',
     maintainer='Uptick',
@@ -34,5 +34,7 @@ setup(
         'setuptools',
         'six',
         'croniter'
+        'channels>=2.1.0',
+        'channels_redis>=2.3.0',
     ],
 )
