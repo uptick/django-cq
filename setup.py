@@ -33,7 +33,7 @@ setup(
     install_requires=[
         'setuptools',
         'six',
-        'croniter'
+        'croniter',
         'channels>=2.1.0',
         'channels_redis>=2.3.0',
     ],
