@@ -23,4 +23,4 @@ class RepeatingTaskAdminForm(forms.ModelForm):
 @admin.register(RepeatingTask)
 class RepeatingTaskAdmin(admin.ModelAdmin):
     form = RepeatingTaskAdminForm
-    list_display = ('func_name', 'args', 'coalesce', 'crontab', 'last_run', 'next_run', )
+    list_display = ('func_name', 'args', 'kwargs', 'coalesce', 'crontab', 'last_run', 'next_run', )
