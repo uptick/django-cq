@@ -287,5 +287,4 @@ class Migration(migrations.Migration):
 
 
 ### Coalescing
-
-# TODO
+Pending or queued instances of a coalescing task will prevent other instances of the task from running.
