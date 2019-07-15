@@ -3,9 +3,18 @@ import logging
 from django.apps import AppConfig
 from django.conf import settings
 from django.core.cache import cache
+from django.db.backends.signals import connection_created, post_migrate
 from django.utils.module_loading import import_module
 
 logger = logging.getLogger('cq')
+
+
+migration_happened = False
+
+
+def post_migration_callback(sender, **kwargs):
+    global migration_happened
+    migration_happened = True
 
 
 def scan_tasks(*args, **kwargs):
@@ -16,7 +25,7 @@ def scan_tasks(*args, **kwargs):
             pass
 
 
-def requeue_tasks(*args, **kwargs):
+def requeue_tasks(sender, connection):
     from cq.models import Task
     lock = 'RETRY_QUEUED_TASKS'
     with cache.lock(lock, timeout=2):
@@ -30,4 +39,7 @@ class CqConfig(AppConfig):
     def ready(self):
         import cq.signals
         scan_tasks()
-        requeue_tasks()
+        # Run requeue_tasks() only after migrations are run
+        post_migrate.connect(post_migration_callback, sender=self)
+        if not migration_happened:
+            connection_created.connect(requeue_tasks, sender=self)
