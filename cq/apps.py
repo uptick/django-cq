@@ -3,7 +3,8 @@ import logging
 from django.apps import AppConfig
 from django.conf import settings
 from django.core.cache import cache
-from django.db.backends.signals import connection_created, post_migrate
+from django.db.backends.signals import connection_created
+from django.db.models.signals import post_migrate
 from django.utils.module_loading import import_module
 
 logger = logging.getLogger('cq')
