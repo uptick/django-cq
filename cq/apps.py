@@ -3,6 +3,7 @@ import logging
 from django.apps import AppConfig
 from django.conf import settings
 from django.core.cache import cache
+from django.db.utils import ProgrammingError
 from django.utils.module_loading import import_module
 
 logger = logging.getLogger('cq')
@@ -21,7 +22,12 @@ def requeue_tasks(*args, **kwargs):
     lock = 'RETRY_QUEUED_TASKS'
     with cache.lock(lock, timeout=2):
         # Find all Queued tasks and set them to Retry, since they get stuck after a reboot
-        Task.objects.filter(status=Task.STATUS_QUEUED).update(status=Task.STATUS_RETRY)
+        try:
+            tasks = Task.objects.filter(status=Task.STATUS_QUEUED).update(status=Task.STATUS_RETRY)
+            logger.info('Requeued {} tasks'.format(tasks))
+        except ProgrammingError:
+            logger.warning("Failed requeuing tasks; database likely hasn't had migrations run.")
+            pass
 
 
 class CqConfig(AppConfig):
