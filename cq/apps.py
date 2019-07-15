@@ -26,7 +26,7 @@ def scan_tasks(*args, **kwargs):
             pass
 
 
-def requeue_tasks(sender, connection):
+def requeue_tasks(sender, connection, *args, **kwargs):
     from cq.models import Task
     lock = 'RETRY_QUEUED_TASKS'
     with cache.lock(lock, timeout=2):
