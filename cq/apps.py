@@ -26,7 +26,7 @@ def requeue_tasks(*args, **kwargs):
             tasks = Task.objects.filter(status=Task.STATUS_QUEUED).update(status=Task.STATUS_RETRY)
             logger.info('Requeued {} tasks'.format(tasks))
         except ProgrammingError:
-            logger.info('Not requeuing tasks')
+            logger.warning("Failed requeuing tasks; database likely hasn't had migrations run.")
             pass
 
 
