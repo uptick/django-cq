@@ -1,7 +1,6 @@
 import logging
 
 from channels.consumer import SyncConsumer
-
 from django.db import transaction
 
 from .models import Task
@@ -16,7 +15,11 @@ class CQConsumer(SyncConsumer):
 
 
 def run_task(task_id):
-    task = Task.objects.get(id=task_id)
+    try:
+        task = Task.objects.get(id=task_id)
+    except Task.DoesNotExist:
+        logger.error(f'Failed to find task with id {task_id}')
+        return
     func_name = task.signature['func_name']
     if task.status == Task.STATUS_REVOKED:
         logger.info('Not running revoked task: {}'.format(func_name))
